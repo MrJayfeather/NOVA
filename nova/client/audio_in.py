@@ -71,6 +71,20 @@ class Microphone:
         self._chunk_samples = chunk_samples
         self._stream = None
 
+    @staticmethod
+    def _pick_device():
+        # Вход через MME/WASAPI конфликтует с DXGI-захватом dxcam
+        # (access violation в grab); DirectSound не конфликтует.
+        import sounddevice as sd
+
+        try:
+            for api in sd.query_hostapis():
+                if "DirectSound" in api["name"] and api["default_input_device"] >= 0:
+                    return api["default_input_device"]
+        except Exception:
+            pass
+        return None
+
     def start(self, loop: asyncio.AbstractEventLoop, queue: asyncio.Queue) -> None:
         import sounddevice as sd
 
@@ -83,5 +97,6 @@ class Microphone:
             channels=1,
             dtype="int16",
             callback=callback,
+            device=self._pick_device(),
         )
         self._stream.start()
