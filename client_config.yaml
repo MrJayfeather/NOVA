@@ -1,0 +1,12 @@
+server_url: ws://localhost:8000/ws
+profile: desktop
+persona: nova
+periodic_fps: 1.0
+burst_frames: 6
+jpeg_quality: 85
+hotkeys:
+  mute: ctrl+alt+m
+  comment_now: ctrl+alt+c
+  pause: ctrl+alt+p
+  feedback_up: ctrl+alt+up
+  feedback_down: ctrl+alt+down
