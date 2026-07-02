@@ -1,0 +1,33 @@
+[project]
+name = "nova"
+version = "0.1.0"
+description = "NOVA — персональный ИИ-компаньон (этап 1: скелет)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "websockets>=12",
+    "pyyaml>=6",
+    "numpy>=1.26",
+    "opencv-python>=4.9",
+    "sounddevice>=0.4.6",
+    "dxcam>=0.0.5; sys_platform == 'win32'",
+    "mss>=9",
+    "keyboard>=0.13",
+    "pysilero-vad>=2.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "httpx>=0.27"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["nova"]
