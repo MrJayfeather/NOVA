@@ -83,14 +83,26 @@ async def hotkey_loop(conn, player: Player, actions: asyncio.Queue, state: dict)
             conn.send(Hotkey(action=action_map.get(action, action)))
 
 
-def register_hotkeys(cfg: ClientConfig, loop, actions: asyncio.Queue) -> None:
-    import keyboard
+def to_pynput_combo(combo: str) -> str:
+    """"ctrl+alt+m" -> "<ctrl>+<alt>+m" (формат pynput GlobalHotKeys)."""
+    parts = []
+    for token in combo.lower().split("+"):
+        token = token.strip()
+        parts.append(token if len(token) == 1 else f"<{token}>")
+    return "+".join(parts)
 
+
+def register_hotkeys(cfg: ClientConfig, loop, actions: asyncio.Queue) -> None:
+    from pynput import keyboard as pk
+
+    mapping = {}
     for action, combo in cfg.hotkeys.items():
-        keyboard.add_hotkey(
-            combo,
-            lambda a=action: loop.call_soon_threadsafe(actions.put_nowait, a),
+        mapping[to_pynput_combo(combo)] = (
+            lambda a=action: loop.call_soon_threadsafe(actions.put_nowait, a)
         )
+    listener = pk.GlobalHotKeys(mapping)
+    listener.daemon = True
+    listener.start()
 
 
 async def amain() -> None:
@@ -119,6 +131,9 @@ async def amain() -> None:
         send_frame = staticmethod(conn.send_frame)
 
     source = ProcessFrameSource(jpeg_quality=cfg.jpeg_quality)
+    # onnxruntime (SileroVAD) должен загрузиться ДО старта PortAudio-потока,
+    # иначе access violation в нативном коде
+    segmenter = VADSegmenter(SileroVAD())
     loop = asyncio.get_running_loop()
     mic_queue: asyncio.Queue = asyncio.Queue()
     Microphone().start(loop, mic_queue)
@@ -129,7 +144,7 @@ async def amain() -> None:
     await asyncio.gather(
         conn.run(),
         capture_loop(source, detector, BurstCollector(cfg.burst_frames), ConnAdapter, cfg),
-        audio_in_loop(ConnAdapter, VADSegmenter(SileroVAD()), mic_queue, state),
+        audio_in_loop(ConnAdapter, segmenter, mic_queue, state),
         hotkey_loop(ConnAdapter, player, actions, state),
     )
 

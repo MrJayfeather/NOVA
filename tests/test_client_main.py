@@ -6,7 +6,7 @@ import numpy as np
 from nova.client.audio_out import AudioSink, Player
 from nova.client.config import ClientConfig
 from nova.client.detector import BurstCollector, FrameDetector
-from nova.client.main import Metrics, capture_loop, make_on_message
+from nova.client.main import Metrics, capture_loop, make_on_message, to_pynput_combo
 from nova.shared.protocol import DetectorEvent, Frame, SpeakStart
 
 
@@ -54,6 +54,12 @@ async def test_capture_loop_sends_periodic_event_and_burst():
     bursts = [m for m in conn.sent if isinstance(m, Frame) and m.kind == "burst"]
     assert len(bursts) == cfg.burst_frames
     assert all(b.burst_id == bursts[0].burst_id for b in bursts)
+
+
+def test_to_pynput_combo():
+    assert to_pynput_combo("ctrl+alt+m") == "<ctrl>+<alt>+m"
+    assert to_pynput_combo("ctrl+alt+up") == "<ctrl>+<alt>+<up>"
+    assert to_pynput_combo("F9") == "<f9>"
 
 
 def test_on_message_logs_latency_and_prints(tmp_path, capsys):
