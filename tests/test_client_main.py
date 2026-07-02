@@ -10,16 +10,18 @@ from nova.client.main import Metrics, capture_loop, make_on_message
 from nova.shared.protocol import DetectorEvent, Frame, SpeakStart
 
 
-class FakeGrabber:
-    """Отдаёт чёрные кадры, затем белые (смена сцены)."""
+class FakeSource:
+    """Отдаёт кортежи кадров: чёрные, затем белые (смена сцены)."""
 
     def __init__(self):
-        self.count = 0
+        self.items = []
+        for i in range(8):
+            value = 0 if i < 3 else 255
+            gray = np.full((90, 160), value, dtype=np.uint8)
+            self.items.append((time.time(), f"jpg{i}".encode(), gray, (5, 6)))
 
-    def grab(self):
-        self.count += 1
-        value = 0 if self.count <= 3 else 255
-        return np.full((90, 160, 3), value, dtype=np.uint8)
+    def get(self):
+        return self.items.pop(0) if self.items else None
 
 
 class FakeConn:
@@ -38,15 +40,15 @@ async def test_capture_loop_sends_periodic_event_and_burst():
     cfg = ClientConfig(server_url="ws://x", periodic_fps=100.0, burst_frames=2)
     conn = FakeConn()
     await capture_loop(
-        grabber=FakeGrabber(),
+        source=FakeSource(),
         detector=FrameDetector(motion_threshold=12.0, scene_threshold=40.0),
         burst=BurstCollector(size=cfg.burst_frames),
         conn=conn,
         cfg=cfg,
         iterations=8,
-        sleep_s=0.0,
     )
-    assert any(isinstance(m, Frame) and m.kind == "periodic" for m in conn.frames)
+    periodic = [m for m in conn.frames if isinstance(m, Frame) and m.kind == "periodic"]
+    assert periodic and periodic[0].cursor_x == 5 and periodic[0].cursor_y == 6
     events = [m for m in conn.sent if isinstance(m, DetectorEvent)]
     assert any(e.event == "scene_change" for e in events)
     bursts = [m for m in conn.sent if isinstance(m, Frame) and m.kind == "burst"]

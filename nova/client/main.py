@@ -5,7 +5,7 @@ from pathlib import Path
 
 from nova.client.audio_in import Microphone, SileroVAD, VADSegmenter
 from nova.client.audio_out import Player, SounddeviceSink
-from nova.client.capture import Grabber, cursor_pos, encode_jpeg, to_gray_small
+from nova.client.capture_worker import ProcessFrameSource
 from nova.client.config import ClientConfig, load_config
 from nova.client.connection import Connection
 from nova.client.detector import BurstCollector, FrameDetector
@@ -16,38 +16,35 @@ from nova.shared.protocol import (
 )
 
 
-async def capture_loop(grabber, detector, burst, conn, cfg: ClientConfig,
-                       iterations: int | None = None, sleep_s: float = 1 / 15):
+async def capture_loop(source, detector, burst, conn, cfg: ClientConfig,
+                       iterations: int | None = None):
     period = 1.0 / cfg.periodic_fps
     last_periodic = 0.0
     i = 0
     while iterations is None or i < iterations:
         i += 1
-        frame = grabber.grab()
-        if frame is None:
-            await asyncio.sleep(sleep_s)
+        item = await asyncio.to_thread(source.get)
+        if item is None:
             continue
-        ts = time.time()
-        event = detector.process(to_gray_small(frame), ts)
+        ts, jpeg, gray_small, (cursor_x, cursor_y) = item
+        event = detector.process(gray_small, ts)
         if event and not burst.active:
             conn.send(DetectorEvent(ts=ts, event=event))
             burst.start()
         if burst.active:
-            done = burst.add(encode_jpeg(frame, cfg.jpeg_quality))
+            done = burst.add(jpeg)
             if done is not None:
-                for seq, jpeg in enumerate(done):
+                for seq, j in enumerate(done):
                     conn.send(Frame(
-                        ts=ts, jpeg_b64=base64.b64encode(jpeg).decode(),
+                        ts=ts, jpeg_b64=base64.b64encode(j).decode(),
                         kind="burst", burst_id=burst.burst_id, seq=seq,
                     ))
         elif ts - last_periodic >= period:
-            x, y = cursor_pos()
             conn.send_frame(Frame(
-                ts=ts, jpeg_b64=base64.b64encode(encode_jpeg(frame, cfg.jpeg_quality)).decode(),
-                cursor_x=x, cursor_y=y,
+                ts=ts, jpeg_b64=base64.b64encode(jpeg).decode(),
+                cursor_x=cursor_x, cursor_y=cursor_y,
             ))
             last_periodic = ts
-        await asyncio.sleep(sleep_s)
 
 
 def make_on_message(player: Player, metrics: Metrics, state: dict):
@@ -121,6 +118,7 @@ async def amain() -> None:
         send = staticmethod(sending_conn_send)
         send_frame = staticmethod(conn.send_frame)
 
+    source = ProcessFrameSource(jpeg_quality=cfg.jpeg_quality)
     loop = asyncio.get_running_loop()
     mic_queue: asyncio.Queue = asyncio.Queue()
     Microphone().start(loop, mic_queue)
@@ -130,7 +128,7 @@ async def amain() -> None:
 
     await asyncio.gather(
         conn.run(),
-        capture_loop(Grabber(), detector, BurstCollector(cfg.burst_frames), ConnAdapter, cfg),
+        capture_loop(source, detector, BurstCollector(cfg.burst_frames), ConnAdapter, cfg),
         audio_in_loop(ConnAdapter, VADSegmenter(SileroVAD()), mic_queue, state),
         hotkey_loop(ConnAdapter, player, actions, state),
     )
