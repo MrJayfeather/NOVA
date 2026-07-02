@@ -1,4 +1,3 @@
-import asyncio
 from abc import ABC, abstractmethod
 from collections import deque
 
@@ -63,40 +62,3 @@ class VADSegmenter:
         self._silence_count = 0
         self._pre.clear()
         return segment
-
-
-class Microphone:
-    def __init__(self, sample_rate: int = 16000, chunk_samples: int = 512):
-        self._sample_rate = sample_rate
-        self._chunk_samples = chunk_samples
-        self._stream = None
-
-    @staticmethod
-    def _pick_device():
-        # Вход через MME/WASAPI конфликтует с DXGI-захватом dxcam
-        # (access violation в grab); DirectSound не конфликтует.
-        import sounddevice as sd
-
-        try:
-            for api in sd.query_hostapis():
-                if "DirectSound" in api["name"] and api["default_input_device"] >= 0:
-                    return api["default_input_device"]
-        except Exception:
-            pass
-        return None
-
-    def start(self, loop: asyncio.AbstractEventLoop, queue: asyncio.Queue) -> None:
-        import sounddevice as sd
-
-        def callback(indata, frames, time_info, status):
-            loop.call_soon_threadsafe(queue.put_nowait, bytes(indata))
-
-        self._stream = sd.RawInputStream(
-            samplerate=self._sample_rate,
-            blocksize=self._chunk_samples,
-            channels=1,
-            dtype="int16",
-            callback=callback,
-            device=self._pick_device(),
-        )
-        self._stream.start()

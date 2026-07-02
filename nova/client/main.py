@@ -1,10 +1,11 @@
 import asyncio
 import base64
+import os
 import time
 from pathlib import Path
 
-from nova.client.audio_in import Microphone, SileroVAD, VADSegmenter
 from nova.client.audio_out import Player, SounddeviceSink
+from nova.client.audio_worker import ProcessAudioSource
 from nova.client.capture_worker import ProcessFrameSource
 from nova.client.config import ClientConfig, load_config
 from nova.client.connection import Connection
@@ -58,10 +59,9 @@ def make_on_message(player: Player, metrics: Metrics, state: dict):
     return on_message
 
 
-async def audio_in_loop(conn, segmenter, mic_queue: asyncio.Queue, state: dict):
+async def audio_in_loop(conn, source, state: dict):
     while True:
-        chunk = await mic_queue.get()
-        segment = segmenter.feed(chunk)
+        segment = await asyncio.to_thread(source.get)
         if segment is not None:
             state["last_event_ts"] = time.time()
             conn.send(AudioSegment(
@@ -130,23 +130,28 @@ async def amain() -> None:
         send = staticmethod(sending_conn_send)
         send_frame = staticmethod(conn.send_frame)
 
-    source = ProcessFrameSource(jpeg_quality=cfg.jpeg_quality)
-    # onnxruntime (SileroVAD) должен загрузиться ДО старта PortAudio-потока,
-    # иначе access violation в нативном коде
-    segmenter = VADSegmenter(SileroVAD())
+    frame_source = ProcessFrameSource(jpeg_quality=cfg.jpeg_quality)
     loop = asyncio.get_running_loop()
-    mic_queue: asyncio.Queue = asyncio.Queue()
-    Microphone().start(loop, mic_queue)
+    if os.environ.get("NOVA_NO_MIC") == "1":
+        audio_source = None
+        print("[nova] микрофон ОТКЛЮЧЁН (NOVA_NO_MIC=1)")
+    else:
+        audio_source = ProcessAudioSource()
     actions: asyncio.Queue = asyncio.Queue()
-    register_hotkeys(cfg, loop, actions)
-    print("[nova] клиент запущен, хоткеи активны")
+    if os.environ.get("NOVA_NO_HOTKEYS") == "1":
+        print("[nova] клиент запущен, хоткеи ОТКЛЮЧЕНЫ (NOVA_NO_HOTKEYS=1)")
+    else:
+        register_hotkeys(cfg, loop, actions)
+        print("[nova] клиент запущен, хоткеи активны")
 
-    await asyncio.gather(
+    coros = [
         conn.run(),
-        capture_loop(source, detector, BurstCollector(cfg.burst_frames), ConnAdapter, cfg),
-        audio_in_loop(ConnAdapter, segmenter, mic_queue, state),
+        capture_loop(frame_source, detector, BurstCollector(cfg.burst_frames), ConnAdapter, cfg),
         hotkey_loop(ConnAdapter, player, actions, state),
-    )
+    ]
+    if audio_source is not None:
+        coros.append(audio_in_loop(ConnAdapter, audio_source, state))
+    await asyncio.gather(*coros)
 
 
 def main() -> None:

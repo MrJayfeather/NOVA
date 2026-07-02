@@ -15,7 +15,9 @@ dependencies = [
     "dxcam>=0.0.5; sys_platform == 'win32'",
     "mss>=9",
     "pynput>=1.7",
-    "pysilero-vad>=2.0",
+    # 3.x собирает C-расширение локально (CMake) и не собирается на системном
+    # питоне; 2.x — чистый python + предсобранный onnxruntime
+    "pysilero-vad>=2,<3",
 ]
 
 [dependency-groups]
