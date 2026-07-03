@@ -20,6 +20,12 @@ def test_pick_offer_rejects_old_gpu_arch():
     assert pick_offer(offers)["id"] == 2
 
 
+def test_pick_offer_rejects_arm_hosts():
+    offers = [offer(id=1, dph_total=0.20, cpu_arch="arm64"),
+              offer(id=2, dph_total=0.40, cpu_arch="amd64")]
+    assert pick_offer(offers)["id"] == 2
+
+
 def test_pick_offer_rejects_china():
     offers = [offer(id=1, dph_total=0.20, geolocation="China, CN"),
               offer(id=2, dph_total=0.40)]
