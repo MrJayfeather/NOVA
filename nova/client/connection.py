@@ -44,7 +44,12 @@ class Connection:
         delays = backoff_delays()
         while True:
             try:
-                async with websockets.connect(self._url, max_size=32 * 1024 * 1024) as ws:
+                # ping_timeout щедрый: сеть хостов vast временами замирает
+                # на десятки секунд, не стоит рвать сессию из-за этого
+                async with websockets.connect(
+                    self._url, max_size=32 * 1024 * 1024,
+                    ping_interval=20, ping_timeout=60,
+                ) as ws:
                     delays = backoff_delays()  # успешный коннект — сброс backoff
                     await ws.send(dump_message(self._hello))
                     print(f"[nova] подключено к {self._url}")

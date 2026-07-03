@@ -24,11 +24,14 @@ fi
 # голос (fish-speech) — если выбран и ещё не поднят
 if [ "$NOVA_TTS" = "fish" ] && ! curl -s -o /dev/null http://127.0.0.1:8081/; then
   cd /workspace/fish-speech
+  # --compile разгоняет декодер в разы (14 ток/с -> реального времени мало),
+  # ценой ~2 мин компиляции при старте
   nohup /workspace/fishenv/bin/python -m tools.api_server \
     --listen 127.0.0.1:8081 \
     --llama-checkpoint-path /workspace/checkpoints/openaudio-s1-mini \
     --decoder-checkpoint-path /workspace/checkpoints/openaudio-s1-mini/codec.pth \
     --decoder-config-name modded_dac_vq \
+    --compile \
     > /workspace/fish.log 2>&1 &
   cd /workspace/NOVA
 fi

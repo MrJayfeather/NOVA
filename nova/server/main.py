@@ -122,4 +122,5 @@ if __name__ == "__main__":
     uvicorn.run(
         create_app(mock=mock, token=os.environ.get("NOVA_TOKEN", "")),
         host="0.0.0.0", port=8000,
+        ws_ping_interval=20, ws_ping_timeout=60,
     )

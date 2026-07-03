@@ -16,6 +16,9 @@ def build_tts_request(text: str, ref_audio: bytes, ref_text: str) -> dict:
         "references": [{"audio": ref_audio, "text": ref_text}],
         "format": "wav",
         "streaming": False,
+        # сервер кэширует закодированный референс — без этого он
+        # перекодирует 14-секундный образец на каждое предложение (~1.5с)
+        "use_memory_cache": "on",
     }
 
 

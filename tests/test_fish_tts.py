@@ -19,6 +19,7 @@ def test_build_request_shape():
     assert req["text"] == "привет"
     assert req["format"] == "wav"
     assert req["streaming"] is False
+    assert req["use_memory_cache"] == "on"
     assert req["references"] == [{"audio": b"refbytes", "text": "текст референса"}]
 
 
