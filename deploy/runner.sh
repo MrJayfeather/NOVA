@@ -2,10 +2,12 @@
 # Идемпотентный запуск сервисов NOVA. Вызывается из onstart.sh при старте
 # инстанса и вручную по ssh после git pull (перезапуск с новым кодом).
 set -x
-export $(tr '\0' '\n' < /proc/1/environ | grep -E '^(NOVA_MOCK|NOVA_TOKEN|NOVA_TTS|VAST_API_KEY|VAST_CONTAINERLABEL|HF_TOKEN)=' | tr '\n' ' ')
+export $(tr '\0' '\n' < /proc/1/environ | grep -E '^(NOVA_MOCK|NOVA_TOKEN|NOVA_TTS|NOVA_FISH_CKPT|VAST_API_KEY|VAST_CONTAINERLABEL|HF_TOKEN)=' | tr '\n' ' ')
 export HF_HOME=/workspace/hf
 export COQUI_TOS_AGREED=1
 export NOVA_TTS=${NOVA_TTS:-fish}
+# каталог голосовой модели: базовый s1-mini или дообученный (mita)
+export NOVA_FISH_CKPT=${NOVA_FISH_CKPT:-/workspace/checkpoints/openaudio-s1-mini}
 [ -f /workspace/hf_token ] && export HF_TOKEN=$(cat /workspace/hf_token)
 export LD_LIBRARY_PATH="$(python3 -c 'import nvidia.cudnn; print(list(nvidia.cudnn.__path__)[0] + "/lib")'):$LD_LIBRARY_PATH"
 
@@ -28,8 +30,8 @@ if [ "$NOVA_TTS" = "fish" ] && ! curl -s -o /dev/null http://127.0.0.1:8081/; th
   # ценой ~2 мин компиляции при старте
   nohup /workspace/fishenv/bin/python -m tools.api_server \
     --listen 127.0.0.1:8081 \
-    --llama-checkpoint-path /workspace/checkpoints/openaudio-s1-mini \
-    --decoder-checkpoint-path /workspace/checkpoints/openaudio-s1-mini/codec.pth \
+    --llama-checkpoint-path "$NOVA_FISH_CKPT" \
+    --decoder-checkpoint-path "$NOVA_FISH_CKPT/codec.pth" \
     --decoder-config-name modded_dac_vq \
     --compile \
     > /workspace/fish.log 2>&1 &
