@@ -99,13 +99,14 @@ def create_instance(key: str, offer_id: int, token: str) -> None:
 
 
 def set_state(key: str, instance_id: int, state: str) -> None:
-    r = httpx.put(f"{API_V1}/instances/{instance_id}/", headers=_headers(key),
+    # управление состоянием/удаление осталось на v0 (список — на v1)
+    r = httpx.put(f"{API}/instances/{instance_id}/", headers=_headers(key),
                   json={"state": state}, timeout=60)
     r.raise_for_status()
 
 
 def destroy(key: str, instance_id: int) -> None:
-    r = httpx.delete(f"{API_V1}/instances/{instance_id}/", headers=_headers(key), timeout=60)
+    r = httpx.delete(f"{API}/instances/{instance_id}/", headers=_headers(key), timeout=60)
     r.raise_for_status()
 
 
