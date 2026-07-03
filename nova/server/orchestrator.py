@@ -42,7 +42,9 @@ class Session:
         elif isinstance(msg, AudioSegment):
             try:
                 text = await self._asr.transcribe(base64.b64decode(msg.pcm_b64), msg.sample_rate)
-                reply = await self._llm.reply_to_user(text, list(self._history))
+                reply = await self._llm.reply_to_user(
+                    text, list(self._frames), list(self._history)
+                )
             except Exception as exc:
                 print(f"[nova] ошибка модели (reply): {exc!r}")
                 return

@@ -15,7 +15,7 @@ class MockLLM(VisionLLM):
     def __init__(self, persona_prompt: str):
         self._persona = persona_prompt
 
-    async def reply_to_user(self, text: str, history: list[dict]) -> str:
+    async def reply_to_user(self, text: str, frames: list[bytes], history: list[dict]) -> str:
         return f"(мок) Ты сказал: «{text}». Отвечаю как положено."
 
     async def comment_on_event(self, event: str, frames: list[bytes], history: list[dict]) -> str:

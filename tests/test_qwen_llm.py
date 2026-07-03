@@ -11,10 +11,18 @@ def test_reply_messages_structure():
         {"role": "user", "content": "раньше"},
         {"role": "assistant", "content": "ответ"},
     ]
-    msgs = make_llm().build_reply_messages("привет", history)
+    msgs = make_llm().build_reply_messages("привет", [], history)
     assert msgs[0] == {"role": "system", "content": "Ты — NOVA."}
     assert msgs[1:3] == history
     assert msgs[-1] == {"role": "user", "content": "привет"}
+
+
+def test_reply_messages_include_fresh_frames():
+    msgs = make_llm().build_reply_messages("что видишь?", [b"jpg1", b"jpg2", b"jpg3"], [])
+    content = msgs[-1]["content"]
+    images = [c for c in content if c["type"] == "image_url"]
+    assert len(images) == 2  # только два самых свежих кадра
+    assert content[-1] == {"type": "text", "text": "что видишь?"}
 
 
 def test_comment_messages_have_images_and_pass_instruction():

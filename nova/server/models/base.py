@@ -11,7 +11,9 @@ class ASRModel(ABC):
 
 class VisionLLM(ABC):
     @abstractmethod
-    async def reply_to_user(self, text: str, history: list[dict]) -> str: ...
+    async def reply_to_user(
+        self, text: str, frames: list[bytes], history: list[dict]
+    ) -> str: ...
 
     @abstractmethod
     async def comment_on_event(

@@ -23,11 +23,19 @@ class QwenVLM(VisionLLM):
         self._model = model
         self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout)
 
-    def build_reply_messages(self, text: str, history: list[dict]) -> list[dict]:
+    def build_reply_messages(
+        self, text: str, frames: list[bytes], history: list[dict]
+    ) -> list[dict]:
+        content: object = text
+        if frames:
+            # свежие кадры экрана, чтобы она отвечала по тому, что реально видит
+            parts = [_image_part(f) for f in frames[-2:]]
+            parts.append({"type": "text", "text": text})
+            content = parts
         return [
             {"role": "system", "content": self._persona},
             *history[-24:],
-            {"role": "user", "content": text},
+            {"role": "user", "content": content},
         ]
 
     def build_comment_messages(
@@ -54,8 +62,10 @@ class QwenVLM(VisionLLM):
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"].strip()
 
-    async def reply_to_user(self, text: str, history: list[dict]) -> str:
-        return await self._chat(self.build_reply_messages(text, history))
+    async def reply_to_user(
+        self, text: str, frames: list[bytes], history: list[dict]
+    ) -> str:
+        return await self._chat(self.build_reply_messages(text, frames, history))
 
     async def comment_on_event(
         self, event: str, frames: list[bytes], history: list[dict]

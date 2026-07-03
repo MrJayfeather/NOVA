@@ -74,7 +74,7 @@ class RecordingLLM(VisionLLM):
         self.calls = []
         self._reply, self._comment = reply, comment
 
-    async def reply_to_user(self, text, history):
+    async def reply_to_user(self, text, frames, history):
         self.calls.append(("reply", text, list(history)))
         return self._reply
 
@@ -122,7 +122,7 @@ async def test_pass_comment_is_silent():
 
 async def test_model_error_does_not_crash_session():
     class BrokenLLM(VisionLLM):
-        async def reply_to_user(self, text, history):
+        async def reply_to_user(self, text, frames, history):
             raise RuntimeError("gpu on fire")
 
         async def comment_on_event(self, event, frames, history):
