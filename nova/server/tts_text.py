@@ -91,12 +91,13 @@ def _number(m: re.Match) -> str:
 
 def normalize_for_tts(text: str) -> str:
     # спрятать ремарки, чтобы транслитерация не превратила [sarcastic]
-    # в [саркастик]; вернуть на место в конце
+    # в [саркастик]; плейсхолдер без цифр и латиницы — его не тронут
+    # ни числовая замена, ни транслит
     markers: list[str] = []
 
     def _hide(m: re.Match) -> str:
         markers.append(m.group(0))
-        return f"\x00{len(markers) - 1}\x00"
+        return "\x00" + "ъ" * len(markers) + "\x00"
 
     out = _MARKER_RE.sub(_hide, text)
     # время вида 2:30 — «два тридцать»
@@ -112,6 +113,6 @@ def normalize_for_tts(text: str) -> str:
     out = re.sub(r"[A-Za-z]+", _latin_word, out)
     for sym, repl in _SYMBOLS.items():
         out = out.replace(sym, repl)
-    out = re.sub(r"\x00(\d+)\x00", lambda m: markers[int(m.group(1))], out)
+    out = re.sub(r"\x00(ъ+)\x00", lambda m: markers[len(m.group(1)) - 1], out)
     # подчистить множественные пробелы
     return re.sub(r"\s{2,}", " ", out).strip()
