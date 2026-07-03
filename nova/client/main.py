@@ -4,7 +4,7 @@ import os
 import time
 from pathlib import Path
 
-from nova.client.audio_out import Player, SounddeviceSink
+from nova.client.audio_out import Player, SounddeviceStreamSink
 from nova.client.audio_worker import ProcessAudioSource
 from nova.client.capture_worker import ProcessFrameSource
 from nova.client.config import ClientConfig, load_config
@@ -110,7 +110,7 @@ async def amain() -> None:
     profile = load_profile(cfg.profile, Path("profiles"))
     state: dict = {}
     metrics = Metrics(Path("data/metrics.jsonl"))
-    player = Player(SounddeviceSink())
+    player = Player(SounddeviceStreamSink())
     conn = Connection(
         cfg.server_url,
         on_message=make_on_message(player, metrics, state),

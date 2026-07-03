@@ -3,7 +3,7 @@ import time
 
 import numpy as np
 
-from nova.client.audio_out import AudioSink, Player
+from nova.client.audio_out import Player, StreamSink
 from nova.client.config import ClientConfig
 from nova.client.detector import BurstCollector, FrameDetector
 from nova.client.main import Metrics, capture_loop, make_on_message, to_pynput_combo
@@ -63,8 +63,14 @@ def test_to_pynput_combo():
 
 
 def test_on_message_logs_latency_and_prints(tmp_path, capsys):
-    class NullSink(AudioSink):
-        def play(self, pcm, sample_rate):
+    class NullSink(StreamSink):
+        def start(self, sample_rate):
+            pass
+
+        def write(self, pcm):
+            pass
+
+        def stop(self):
             pass
 
     metrics = Metrics(tmp_path / "metrics.jsonl")
