@@ -6,7 +6,7 @@ import time
 
 import httpx
 
-API = "https://console.vast.ai/api/v0"
+API = "https://console.vast.ai/api/v1"  # управление инстансами — на v1
 IDLE_LIMIT_S = 900.0
 
 

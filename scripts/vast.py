@@ -14,6 +14,7 @@ from pathlib import Path
 import httpx
 
 API = "https://console.vast.ai/api/v0"
+API_V1 = "https://console.vast.ai/api/v1"  # инстансы переехали на v1
 LABEL = "nova"
 IMAGE = "vllm/vllm-openai:v0.11.0"
 DISK_GB = 80
@@ -67,8 +68,7 @@ def search_offers(key: str) -> list[dict]:
 
 
 def my_instances(key: str) -> list[dict]:
-    r = httpx.get(f"{API}/instances/", headers=_headers(key),
-                  params={"owner": "me"}, timeout=60)
+    r = httpx.get(f"{API_V1}/instances/", headers=_headers(key), timeout=60)
     r.raise_for_status()
     return [i for i in r.json().get("instances", []) if i.get("label") == LABEL]
 
@@ -97,13 +97,13 @@ def create_instance(key: str, offer_id: int, token: str) -> None:
 
 
 def set_state(key: str, instance_id: int, state: str) -> None:
-    r = httpx.put(f"{API}/instances/{instance_id}/", headers=_headers(key),
+    r = httpx.put(f"{API_V1}/instances/{instance_id}/", headers=_headers(key),
                   json={"state": state}, timeout=60)
     r.raise_for_status()
 
 
 def destroy(key: str, instance_id: int) -> None:
-    r = httpx.delete(f"{API}/instances/{instance_id}/", headers=_headers(key), timeout=60)
+    r = httpx.delete(f"{API_V1}/instances/{instance_id}/", headers=_headers(key), timeout=60)
     r.raise_for_status()
 
 
