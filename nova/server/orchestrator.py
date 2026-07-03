@@ -16,6 +16,19 @@ from nova.shared.protocol import (
 
 Send = Callable[[object], Awaitable[None]]
 
+# Кадры прикладываются к ответу только когда вопрос реально про экран:
+# с постоянными кадрами модель пересказывает экран вместо ответа на вопрос.
+_SCREEN_WORDS = (
+    "экран", "монитор", "видишь", "видно", "посмотр", "смотри", "покажи",
+    "что это", "что тут", "что здесь", "что происходит", "окн", "вкладк",
+    "приложени", "программ", "сайт", "страниц", "игр", "видео", "ролик",
+)
+
+
+def wants_screen(text: str) -> bool:
+    t = text.lower()
+    return any(w in t for w in _SCREEN_WORDS)
+
 
 class Session:
     def __init__(
@@ -47,9 +60,8 @@ class Session:
         elif isinstance(msg, AudioSegment):
             try:
                 text = await self._asr.transcribe(base64.b64decode(msg.pcm_b64), msg.sample_rate)
-                reply = await self._llm.reply_to_user(
-                    text, list(self._frames), list(self._history)
-                )
+                frames = list(self._frames) if wants_screen(text) else []
+                reply = await self._llm.reply_to_user(text, frames, list(self._history))
             except Exception as exc:
                 print(f"[nova] ошибка модели (reply): {exc!r}")
                 return

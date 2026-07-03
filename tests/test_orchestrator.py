@@ -2,9 +2,9 @@ import base64
 import json
 from pathlib import Path
 
-from nova.server.models.base import NO_COMMENT, VisionLLM
+from nova.server.models.base import ASRModel, NO_COMMENT, VisionLLM
 from nova.server.models.mock import MockASR, MockLLM, MockTTS
-from nova.server.orchestrator import Session
+from nova.server.orchestrator import Session, wants_screen
 from nova.server.proactive import ProactiveEngine
 from nova.shared.protocol import (
     AudioSegment, DetectorEvent, Frame, Hotkey,
@@ -72,10 +72,12 @@ class RecordingLLM(VisionLLM):
 
     def __init__(self, reply="ок", comment="вижу"):
         self.calls = []
+        self.reply_frames = []
         self._reply, self._comment = reply, comment
 
     async def reply_to_user(self, text, frames, history):
         self.calls.append(("reply", text, list(history)))
+        self.reply_frames.append(list(frames))
         return self._reply
 
     async def comment_on_event(self, event, frames, history):
@@ -159,6 +161,42 @@ async def test_hanging_tts_does_not_block_session():
     await session.handle(Hotkey(action="comment_now"))
     # несмотря на зависший TTS, реплика закрыта и сессия жива
     assert isinstance(sent[-1], SpeakEnd)
+
+
+def test_wants_screen_detects_screen_questions():
+    assert wants_screen("Нова, что ты сейчас видишь?")
+    assert wants_screen("что это за приложение?")
+    assert wants_screen("Посмотри на экран!")
+    assert wants_screen("что тут происходит")
+    assert not wants_screen("Нова, как у тебя дела?")
+    assert not wants_screen("расскажи что-нибудь интересное")
+
+
+async def test_frames_attached_only_for_screen_questions():
+    class FixedASR(ASRModel):
+        def __init__(self, text):
+            self._text = text
+
+        async def transcribe(self, pcm, sample_rate):
+            return self._text
+
+    pcm_b64 = base64.b64encode(b"\x00\x00" * 1600).decode()
+    jpeg_b64 = base64.b64encode(b"fakejpeg").decode()
+    for phrase, n_frames in [("что видишь на экране?", 1), ("как дела?", 0)]:
+        llm = RecordingLLM(reply="ок")
+        sent = []
+
+        async def send(msg):
+            sent.append(msg)
+
+        session = Session(
+            send=send,
+            engine=ProactiveEngine(cooldown_s=0.0, talkativeness=0.5, dedupe_window_s=0.0),
+            asr=FixedASR(phrase), llm=llm, tts=MockTTS(),
+        )
+        await session.handle(Frame(ts=1.0, jpeg_b64=jpeg_b64))
+        await session.handle(AudioSegment(ts=2.0, pcm_b64=pcm_b64, sample_rate=16000))
+        assert len(llm.reply_frames[0]) == n_frames, phrase
 
 
 async def test_feedback_written_to_jsonl(tmp_path):
