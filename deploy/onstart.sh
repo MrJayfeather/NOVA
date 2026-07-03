@@ -29,8 +29,9 @@ if [ ! -d /workspace/fishenv ]; then
 fi
 if [ ! -f /workspace/checkpoints/openaudio-s1-mini/codec.pth ]; then
   [ -f /workspace/hf_token ] && export HF_TOKEN=$(cat /workspace/hf_token)
-  /workspace/fishenv/bin/hf download fishaudio/openaudio-s1-mini \
-    --local-dir /workspace/checkpoints/openaudio-s1-mini > /workspace/hfdl.log 2>&1
+  # через python-api: имя cli-команды меняется между версиями huggingface_hub
+  /workspace/fishenv/bin/python -c "import os; from huggingface_hub import snapshot_download; snapshot_download('fishaudio/openaudio-s1-mini', local_dir='/workspace/checkpoints/openaudio-s1-mini', token=os.environ.get('HF_TOKEN') or None)" \
+    > /workspace/hfdl.log 2>&1
 fi
 
 bash /workspace/NOVA/deploy/runner.sh
