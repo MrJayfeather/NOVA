@@ -66,9 +66,14 @@ class XttsTTS(TTSModel):
             import numpy as np
 
             try:
-                for sentence in split_for_tts(text):
+                # максимум 5 предложений: длинные монологи рвутся паузами синтеза
+                for sentence in split_for_tts(text)[:5]:
                     stream = self._model.inference_stream(
-                        sentence, "ru", self._latent, self._embedding
+                        sentence, "ru", self._latent, self._embedding,
+                        temperature=0.7,
+                        repetition_penalty=5.0,
+                        top_k=50,
+                        top_p=0.85,
                     )
                     for chunk in stream:
                         pcm = (
