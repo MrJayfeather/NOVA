@@ -23,6 +23,13 @@ def test_build_request_shape():
     assert req["references"] == [{"audio": b"refbytes", "text": "текст референса"}]
 
 
+def test_build_request_cloud_reference_id():
+    req = build_tts_request("привет", reference_id="abc123")
+    assert req["reference_id"] == "abc123"
+    assert "references" not in req
+    assert "use_memory_cache" not in req
+
+
 def test_wav_to_pcm_mono_normalizes_gain():
     import numpy as np
     frames = b"\x01\x00\x02\x00" * 100  # тихий сигнал, пик = 2

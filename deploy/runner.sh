@@ -8,6 +8,8 @@ export COQUI_TOS_AGREED=1
 export NOVA_TTS=${NOVA_TTS:-fish}
 # каталог голосовой модели: базовый s1-mini или дообученный (mita)
 export NOVA_FISH_CKPT=${NOVA_FISH_CKPT:-/workspace/checkpoints/openaudio-s1-mini}
+# облачный fish.audio: ключ кладётся в /workspace/fish_key (не в git!)
+[ -f /workspace/fish_key ] && export NOVA_FISH_KEY=$(cat /workspace/fish_key)
 [ -f /workspace/hf_token ] && export HF_TOKEN=$(cat /workspace/hf_token)
 export LD_LIBRARY_PATH="$(python3 -c 'import nvidia.cudnn; print(list(nvidia.cudnn.__path__)[0] + "/lib")'):$LD_LIBRARY_PATH"
 

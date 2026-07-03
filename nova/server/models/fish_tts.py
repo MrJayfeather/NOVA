@@ -10,16 +10,22 @@ from nova.server.models.base import TTSModel
 from nova.server.models.xtts_tts import split_for_tts
 
 
-def build_tts_request(text: str, ref_audio: bytes, ref_text: str) -> dict:
-    return {
+def build_tts_request(text: str, ref_audio: bytes = b"", ref_text: str = "",
+                      reference_id: str = "") -> dict:
+    req = {
         "text": text,
-        "references": [{"audio": ref_audio, "text": ref_text}],
         "format": "wav",
         "streaming": False,
-        # сервер кэширует закодированный референс — без этого он
-        # перекодирует 14-секундный образец на каждое предложение (~1.5с)
-        "use_memory_cache": "on",
     }
+    if reference_id:
+        # облачный fish.audio: готовая модель голоса по id
+        req["reference_id"] = reference_id
+    else:
+        req["references"] = [{"audio": ref_audio, "text": ref_text}]
+        # сервер кэширует закодированный референс — без этого он
+        # перекодирует образец на каждое предложение (~1.5с)
+        req["use_memory_cache"] = "on"
+    return req
 
 
 def wav_to_pcm(wav_bytes: bytes) -> tuple[bytes, int]:
@@ -41,24 +47,31 @@ def wav_to_pcm(wav_bytes: bytes) -> tuple[bytes, int]:
 
 
 class FishTTS(TTSModel):
-    """Голос через fish-speech api_server (OpenAudio S1-mini)."""
+    """Голос через fish-speech api_server (локальный S1-mini) или облачный
+    api.fish.audio (api_key + model + reference_id готового голоса)."""
 
     sample_rate = 44100  # DAC-кодек S1; сверяется с реальным ответом
 
-    def __init__(self, url: str, reference_wav: Path, reference_text: str,
-                 timeout: float = 120.0):
+    def __init__(self, url: str, reference_wav: Path | None = None,
+                 reference_text: str = "", timeout: float = 120.0,
+                 api_key: str = "", model: str = "", reference_id: str = ""):
         self._url = url
-        self._ref_audio = Path(reference_wav).read_bytes()
+        self._ref_audio = Path(reference_wav).read_bytes() if reference_wav else b""
         self._ref_text = reference_text
+        self._reference_id = reference_id
+        self._headers = {"Content-Type": "application/msgpack"}
+        if api_key:
+            self._headers["Authorization"] = f"Bearer {api_key}"
+        if model:
+            # облако выбирает модель синтеза заголовком
+            self._headers["model"] = model
         self._client = httpx.AsyncClient(timeout=timeout)
 
     async def _tts_call(self, sentence: str) -> bytes:
-        req = build_tts_request(sentence, self._ref_audio, self._ref_text)
-        r = await self._client.post(
-            self._url,
-            content=ormsgpack.packb(req),
-            headers={"Content-Type": "application/msgpack"},
-        )
+        req = build_tts_request(sentence, self._ref_audio, self._ref_text,
+                                reference_id=self._reference_id)
+        r = await self._client.post(self._url, content=ormsgpack.packb(req),
+                                    headers=self._headers)
         r.raise_for_status()
         return r.content
 

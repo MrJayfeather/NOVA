@@ -47,9 +47,15 @@
 зато повторный старт за ~2–3 минуты без скачивания моделей).
 Полное удаление: `uv run python scripts/vast.py down --destroy`.
 
-Голос NOVA: положи 10–15 с чистой записи голоса в
-`personas/nova/voice_sample.wav` — клонируется автоматически при старте
-сервера. Без файла используется встроенный женский голос.
+Голос NOVA — движок выбирается переменной `NOVA_TTS` на сервере:
+
+- `fish` (по умолчанию на инстансе) — локальный OpenAudio S1-mini, клонирует
+  голос по образцу `personas/nova/voice_sample.wav` + `voice_sample.txt`
+  (10–30 с чистой записи и её точный транскрипт);
+- `fishcloud` — облачный api.fish.audio: ключ в `/workspace/fish_key`
+  на инстансе, модель — `NOVA_FISH_MODEL` (по умолчанию `s2.1-pro-free`),
+  голос — `NOVA_FISH_REF_ID` (id готовой модели голоса с fish.audio);
+- `xtts` — запасной XTTS-v2 по тому же voice_sample.wav.
 
 ## Конфиги
 
