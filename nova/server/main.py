@@ -28,7 +28,17 @@ def build_models(mock: bool, persona_prompt: str):
         model=os.environ.get("NOVA_MODEL", "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8"),
     )
     persona = os.environ.get("NOVA_PERSONA", "nova")
-    tts = XttsTTS(speaker_wav=Path("personas") / persona / "voice_sample.wav")
+    ref_dir = Path("personas") / persona
+    if os.environ.get("NOVA_TTS", "xtts") == "fish":
+        from nova.server.models.fish_tts import FishTTS
+
+        tts = FishTTS(
+            url=os.environ.get("NOVA_FISH_URL", "http://127.0.0.1:8081/v1/tts"),
+            reference_wav=ref_dir / "voice_sample.wav",
+            reference_text=(ref_dir / "voice_sample.txt").read_text(encoding="utf-8").strip(),
+        )
+    else:
+        tts = XttsTTS(speaker_wav=ref_dir / "voice_sample.wav")
     return asr, llm, tts
 
 
