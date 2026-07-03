@@ -55,6 +55,7 @@ class SpeakStart(BaseModel):
     text: str
     reason: str
     sample_rate: int
+    heard: str = ""  # что распознал ASR (для отладки «она меня не так поняла»)
 
 
 class AudioChunk(BaseModel):

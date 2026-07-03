@@ -53,7 +53,7 @@ class Session:
                 return
             self._history.append({"role": "user", "content": text})
             self._history.append({"role": "assistant", "content": reply})
-            await self._speak(reply, reason="reply")
+            await self._speak(reply, reason="reply", heard=text)
         elif isinstance(msg, DetectorEvent):
             decision = self._engine.on_event(msg.event, now=time.time())
             if decision.speak:
@@ -91,11 +91,12 @@ class Session:
         with self._feedback_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    async def _speak(self, text: str, reason: str) -> None:
+    async def _speak(self, text: str, reason: str, heard: str = "") -> None:
         self._last_text = text
         uid = uuid.uuid4().hex[:8]
         await self._send(
-            SpeakStart(utterance_id=uid, text=text, reason=reason, sample_rate=self._tts.sample_rate)
+            SpeakStart(utterance_id=uid, text=text, reason=reason,
+                       sample_rate=self._tts.sample_rate, heard=heard)
         )
         seq = 0
         try:

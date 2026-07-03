@@ -14,7 +14,7 @@ class WhisperASR(ASRModel):
         import numpy as np
 
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
-        segments, _ = self._model.transcribe(audio, language="ru", beam_size=1)
+        segments, _ = self._model.transcribe(audio, language="ru", beam_size=5)
         return " ".join(s.text.strip() for s in segments).strip()
 
     async def transcribe(self, pcm: bytes, sample_rate: int) -> str:

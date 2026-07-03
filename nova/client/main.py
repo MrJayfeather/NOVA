@@ -53,6 +53,8 @@ def make_on_message(player: Player, metrics: Metrics, state: dict):
         if isinstance(msg, SpeakStart):
             latency = time.time() - state.get("last_event_ts", time.time())
             metrics.log("speak_latency", latency_s=round(latency, 3), reason=msg.reason)
+            if msg.heard:
+                print(f"[ты (как она услышала)]: {msg.heard}")
             print(f"[NOVA:{msg.reason}] {msg.text}")
             state["speaking"] = True
         elif isinstance(msg, SpeakEnd):
