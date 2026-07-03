@@ -9,9 +9,15 @@ from vast import load_env, pick_offer, ws_url
 def offer(**kw):
     base = dict(id=1, gpu_ram=49152, reliability2=0.99, inet_down=500,
                 disk_space=100, dph_total=0.40, gpu_name="A40",
-                geolocation="Sweden, SE")
+                geolocation="Sweden, SE", compute_cap=860)
     base.update(kw)
     return base
+
+
+def test_pick_offer_rejects_old_gpu_arch():
+    offers = [offer(id=1, dph_total=0.20, compute_cap=750),  # Turing: нет FP8
+              offer(id=2, dph_total=0.40)]
+    assert pick_offer(offers)["id"] == 2
 
 
 def test_pick_offer_rejects_china():

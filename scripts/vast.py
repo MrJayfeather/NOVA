@@ -40,6 +40,8 @@ def pick_offer(offers: list[dict], min_disk: float = 80.0) -> dict | None:
         and o.get("disk_space", 0) >= min_disk
         # хосты из Китая не достучатся до huggingface/github
         and not any(cc in (o.get("geolocation") or "") for cc in ("CN", "China"))
+        # FP8-модель требует Ampere и новее (compute capability >= 8.0)
+        and o.get("compute_cap", 0) >= 800
     ]
     return min(ok, key=lambda o: o.get("dph_total", 9e9)) if ok else None
 
