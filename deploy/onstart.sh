@@ -21,8 +21,8 @@ cd NOVA && git pull
 pip install -e . faster-whisper coqui-tts "nvidia-cudnn-cu12>=9" \
   > /workspace/pip.log 2>&1
 
-# ctranslate2 (whisper) ищет cudnn в pip-пакете
-export LD_LIBRARY_PATH="$(python3 -c 'import nvidia.cudnn, os; print(os.path.join(os.path.dirname(nvidia.cudnn.__file__), "lib"))'):$LD_LIBRARY_PATH"
+# ctranslate2 (whisper) ищет cudnn в pip-пакете (namespace-пакет: путь через __path__)
+export LD_LIBRARY_PATH="$(python3 -c 'import nvidia.cudnn; print(list(nvidia.cudnn.__path__)[0] + "/lib")'):$LD_LIBRARY_PATH"
 
 # 1) vLLM с мозгом (Qwen3-VL). Первый старт качает ~31 ГБ весов.
 nohup vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct-FP8 \
