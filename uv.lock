@@ -307,6 +307,7 @@ source = { editable = "." }
 dependencies = [
     { name = "dxcam", marker = "sys_platform == 'win32'" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "mss" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -322,7 +323,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
@@ -331,6 +331,7 @@ dev = [
 requires-dist = [
     { name = "dxcam", marker = "sys_platform == 'win32'", specifier = ">=0.0.5" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "mss", specifier = ">=9" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "opencv-python", specifier = ">=4.9" },
@@ -345,7 +346,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = ">=0.27" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.23" },
 ]
