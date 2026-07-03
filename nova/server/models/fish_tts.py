@@ -18,8 +18,11 @@ def build_tts_request(text: str, ref_audio: bytes = b"", ref_text: str = "",
         "streaming": False,
     }
     if reference_id:
-        # облачный fish.audio: готовая модель голоса по id
+        # облачный fish.audio: готовая модель голоса по id;
+        # температура ниже дефолтной 0.8 — ровнее подача, меньше глюков
         req["reference_id"] = reference_id
+        req["temperature"] = 0.7
+        req["top_p"] = 0.7
     else:
         req["references"] = [{"audio": ref_audio, "text": ref_text}]
         # сервер кэширует закодированный референс — без этого он
@@ -67,21 +70,32 @@ class FishTTS(TTSModel):
             self._headers["model"] = model
         self._client = httpx.AsyncClient(timeout=timeout)
 
-    async def _tts_call(self, sentence: str) -> bytes:
+    async def _tts_call(self, sentence: str, attempts: int = 2) -> bytes:
         req = build_tts_request(sentence, self._ref_audio, self._ref_text,
                                 reference_id=self._reference_id)
-        r = await self._client.post(self._url, content=ormsgpack.packb(req),
-                                    headers=self._headers)
-        r.raise_for_status()
-        return r.content
+        last: Exception | None = None
+        for i in range(attempts):
+            try:
+                r = await self._client.post(
+                    self._url, content=ormsgpack.packb(req),
+                    headers=self._headers)
+                r.raise_for_status()
+                return r.content
+            except Exception as exc:
+                last = exc
+                if i + 1 < attempts:
+                    print(f"[nova] fish-tts: повтор после {exc!r}")
+        raise last  # type: ignore[misc]
 
     async def synthesize(self, text: str) -> AsyncIterator[bytes]:
         for sentence in split_for_tts(text)[:5]:
             try:
                 pcm, rate = wav_to_pcm(await self._tts_call(sentence))
             except Exception as exc:
-                print(f"[nova] ошибка fish-tts: {exc!r}")
-                return
+                # пропускаем только это предложение — остальная реплика
+                # должна прозвучать (раньше здесь обрубался весь хвост)
+                print(f"[nova] ошибка fish-tts (предложение пропущено): {exc!r}")
+                continue
             if rate != self.sample_rate:
                 print(f"[nova] fish-tts: частота {rate} (ожидалась {self.sample_rate})")
                 self.sample_rate = rate

@@ -26,8 +26,30 @@ def test_build_request_shape():
 def test_build_request_cloud_reference_id():
     req = build_tts_request("привет", reference_id="abc123")
     assert req["reference_id"] == "abc123"
+    assert req["temperature"] == 0.7
     assert "references" not in req
     assert "use_memory_cache" not in req
+
+
+async def test_failed_sentence_skipped_not_fatal():
+    from nova.server.models.fish_tts import FishTTS
+
+    tts = FishTTS.__new__(FishTTS)  # без сети и файлов
+    tts._reference_id = "x"
+    tts.sample_rate = 44100
+    calls = []
+
+    async def fake_call(sentence, attempts=2):
+        calls.append(sentence)
+        if len(calls) == 1:
+            raise RuntimeError("облако икнуло")
+        return make_wav(frames=b"\x10\x00" * 100)
+
+    tts._tts_call = fake_call
+    chunks = [c async for c in tts.synthesize("Первое предложение. Второе предложение.")]
+    # первое упало и пропущено, второе прозвучало
+    assert len(calls) == 2
+    assert len(chunks) == 1
 
 
 def test_wav_to_pcm_mono_normalizes_gain():
