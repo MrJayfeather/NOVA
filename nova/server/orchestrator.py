@@ -36,7 +36,9 @@ class Session:
         self._tts = tts
         self._feedback_path = feedback_path
         self._frames: deque[bytes] = deque(maxlen=8)
-        self._history: deque[dict] = deque(maxlen=24)
+        # история текстовая (кадры в неё не пишутся), поэтому дешёвая:
+        # 100 реплик ~ 4к токенов из 16к окна
+        self._history: deque[dict] = deque(maxlen=100)
         self._last_text: str = ""
 
     async def handle(self, msg) -> None:

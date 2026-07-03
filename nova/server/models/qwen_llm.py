@@ -1,21 +1,21 @@
-import base64
+﻿import base64
 
 import httpx
 
 from nova.server.models.base import NO_COMMENT, VisionLLM
 
 COMMENT_INSTRUCTION = (
-    "Событие на экране: {event}. Посмотри на кадры и, если там есть что-то, "
-    "что стоит прокомментировать в твоём стиле, дай короткую живую реплику "
-    "(1–2 предложения). Если ничего интересного нет или ты это уже "
-    "комментировала — ответь ровно: " + NO_COMMENT
+    "РЎРѕР±С‹С‚РёРµ РЅР° СЌРєСЂР°РЅРµ: {event}. РџРѕСЃРјРѕС‚СЂРё РЅР° РєР°РґСЂС‹ Рё, РµСЃР»Рё С‚Р°Рј РµСЃС‚СЊ С‡С‚Рѕ-С‚Рѕ, "
+    "С‡С‚Рѕ СЃС‚РѕРёС‚ РїСЂРѕРєРѕРјРјРµРЅС‚РёСЂРѕРІР°С‚СЊ РІ С‚РІРѕС‘Рј СЃС‚РёР»Рµ, РґР°Р№ РєРѕСЂРѕС‚РєСѓСЋ Р¶РёРІСѓСЋ СЂРµРїР»РёРєСѓ "
+    "(1вЂ“2 РїСЂРµРґР»РѕР¶РµРЅРёСЏ). Р•СЃР»Рё РЅРёС‡РµРіРѕ РёРЅС‚РµСЂРµСЃРЅРѕРіРѕ РЅРµС‚ РёР»Рё С‚С‹ СЌС‚Рѕ СѓР¶Рµ "
+    "РєРѕРјРјРµРЅС‚РёСЂРѕРІР°Р»Р° вЂ” РѕС‚РІРµС‚СЊ СЂРѕРІРЅРѕ: " + NO_COMMENT
 )
 
 
 def trim_to_sentence(text: str) -> str:
-    """Обрезка по лимиту токенов рвёт фразу на полуслове — не озвучиваем огрызок."""
+    """РћР±СЂРµР·РєР° РїРѕ Р»РёРјРёС‚Сѓ С‚РѕРєРµРЅРѕРІ СЂРІС‘С‚ С„СЂР°Р·Сѓ РЅР° РїРѕР»СѓСЃР»РѕРІРµ вЂ” РЅРµ РѕР·РІСѓС‡РёРІР°РµРј РѕРіСЂС‹Р·РѕРє."""
     t = text.strip()
-    m = max(t.rfind("."), t.rfind("!"), t.rfind("?"), t.rfind("…"))
+    m = max(t.rfind("."), t.rfind("!"), t.rfind("?"), t.rfind("вЂ¦"))
     if m >= 20:
         return t[: m + 1]
     return t
@@ -37,13 +37,13 @@ class QwenVLM(VisionLLM):
     ) -> list[dict]:
         content: object = text
         if frames:
-            # свежие кадры экрана, чтобы она отвечала по тому, что реально видит
+            # СЃРІРµР¶РёРµ РєР°РґСЂС‹ СЌРєСЂР°РЅР°, С‡С‚РѕР±С‹ РѕРЅР° РѕС‚РІРµС‡Р°Р»Р° РїРѕ С‚РѕРјСѓ, С‡С‚Рѕ СЂРµР°Р»СЊРЅРѕ РІРёРґРёС‚
             parts = [_image_part(f) for f in frames[-2:]]
             parts.append({"type": "text", "text": text})
             content = parts
         return [
             {"role": "system", "content": self._persona},
-            *history[-24:],
+            *history[-100:],
             {"role": "user", "content": content},
         ]
 
@@ -54,7 +54,7 @@ class QwenVLM(VisionLLM):
         content.append({"type": "text", "text": COMMENT_INSTRUCTION.format(event=event)})
         return [
             {"role": "system", "content": self._persona},
-            *history[-24:],
+            *history[-100:],
             {"role": "user", "content": content},
         ]
 
@@ -66,7 +66,7 @@ class QwenVLM(VisionLLM):
                 "messages": messages,
                 "max_tokens": 110,
                 "temperature": 0.8,
-                # штрафы против самокопирования («целая палитра» шесть раз подряд)
+                # С€С‚СЂР°С„С‹ РїСЂРѕС‚РёРІ СЃР°РјРѕРєРѕРїРёСЂРѕРІР°РЅРёСЏ (В«С†РµР»Р°СЏ РїР°Р»РёС‚СЂР°В» С€РµСЃС‚СЊ СЂР°Р· РїРѕРґСЂСЏРґ)
                 "presence_penalty": 0.8,
                 "frequency_penalty": 0.6,
             },
