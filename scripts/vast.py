@@ -79,7 +79,7 @@ def my_instances(key: str) -> list[dict]:
     return [i for i in r.json().get("instances", []) if i.get("label") == LABEL]
 
 
-def create_instance(key: str, offer_id: int, token: str) -> None:
+def create_instance(key: str, offer_id: int, token: str, hf_token: str = "") -> None:
     # CRLF из windows-копии ломает bash на инстансе
     onstart = (ROOT / "deploy" / "onstart.sh").read_text(encoding="utf-8").replace("\r\n", "\n")
     body = {
@@ -94,6 +94,7 @@ def create_instance(key: str, offer_id: int, token: str) -> None:
             "NOVA_MOCK": "0",
             "NOVA_TOKEN": token,
             "VAST_API_KEY": key,
+            "HF_TOKEN": hf_token,
             "HF_HOME": "/workspace/hf",
             "COQUI_TOS_AGREED": "1",
         },
@@ -165,7 +166,7 @@ def cmd_up(key: str, env_path: Path, env: dict, write_config: bool) -> None:
             print("[vast] нет подходящих карт — попробуй позже")
             sys.exit(1)
         print(f"[vast] арендую {offer['gpu_name']} за ${offer['dph_total']:.3f}/ч...")
-        create_instance(key, offer["id"], token)
+        create_instance(key, offer["id"], token, hf_token=env.get("HF_TOKEN", ""))
 
     print("[vast] жду запуска (первый старт с загрузкой моделей — 15–25 минут)...")
     while True:
