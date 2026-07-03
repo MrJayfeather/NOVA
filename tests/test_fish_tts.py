@@ -23,16 +23,27 @@ def test_build_request_shape():
     assert req["references"] == [{"audio": b"refbytes", "text": "текст референса"}]
 
 
-def test_wav_to_pcm_mono_roundtrip():
-    frames = b"\x01\x00\x02\x00" * 100
+def test_wav_to_pcm_mono_normalizes_gain():
+    import numpy as np
+    frames = b"\x01\x00\x02\x00" * 100  # тихий сигнал, пик = 2
     pcm, rate = wav_to_pcm(make_wav(rate=44100, frames=frames))
     assert rate == 44100
-    assert pcm == frames
+    arr = np.frombuffer(pcm, dtype=np.int16)
+    assert arr.max() == 23000  # пик подтянут к целевому уровню
+
+
+def test_wav_to_pcm_loud_signal_untouched():
+    import numpy as np
+    loud = (np.ones(200, dtype=np.int16) * 30000).tobytes()
+    pcm, _ = wav_to_pcm(make_wav(rate=44100, frames=loud))
+    assert np.frombuffer(pcm, dtype=np.int16).max() == 30000
 
 
 def test_wav_to_pcm_downmixes_stereo():
-    stereo = (b"\x00\x00\x64\x00") * 50  # L=0, R=100 -> моно=50
+    stereo = (b"\x00\x00\x64\x00") * 50  # L=0, R=100 -> моно=50 (до нормализации)
     pcm, rate = wav_to_pcm(make_wav(rate=24000, channels=2, frames=stereo))
     assert rate == 24000
     import numpy as np
-    assert np.frombuffer(pcm, dtype=np.int16)[0] == 50
+    arr = np.frombuffer(pcm, dtype=np.int16)
+    # ровный сигнал остаётся ровным, пик нормализован
+    assert arr[0] == arr[-1] == 23000

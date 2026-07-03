@@ -23,14 +23,20 @@ def build_tts_request(text: str, ref_audio: bytes, ref_text: str) -> dict:
 
 
 def wav_to_pcm(wav_bytes: bytes) -> tuple[bytes, int]:
+    import numpy as np
+
     with wave.open(BytesIO(wav_bytes)) as w:
         rate = w.getframerate()
         pcm = w.readframes(w.getnframes())
         if w.getnchannels() == 2:
-            import numpy as np
-
             arr = np.frombuffer(pcm, dtype=np.int16).reshape(-1, 2)
             pcm = arr.mean(axis=1).astype(np.int16).tobytes()
+    # нормализация громкости: модель, выученная на тихом датасете, и сама
+    # говорит тихо — поднимаем пик к ~70% шкалы
+    arr = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
+    peak = float(np.abs(arr).max())
+    if 0 < peak < 23000:
+        pcm = (arr * (23000.0 / peak)).astype(np.int16).tobytes()
     return pcm, rate
 
 
