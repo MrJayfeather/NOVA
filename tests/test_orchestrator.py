@@ -133,6 +133,34 @@ async def test_model_error_does_not_crash_session():
     assert sent == []
 
 
+async def test_hanging_tts_does_not_block_session():
+    import asyncio
+
+    from nova.server.models.base import TTSModel
+
+    class HangingTTS(TTSModel):
+        sample_rate = 16000
+
+        async def synthesize(self, text):
+            yield b"aa"
+            await asyncio.sleep(999)
+
+    sent = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    session = Session(
+        send=send,
+        engine=ProactiveEngine(cooldown_s=0.0, talkativeness=0.5, dedupe_window_s=0.0),
+        asr=MockASR(), llm=MockLLM(persona_prompt="x"), tts=HangingTTS(),
+        tts_timeout_s=0.2,
+    )
+    await session.handle(Hotkey(action="comment_now"))
+    # несмотря на зависший TTS, реплика закрыта и сессия жива
+    assert isinstance(sent[-1], SpeakEnd)
+
+
 async def test_feedback_written_to_jsonl(tmp_path):
     session, sent = make_session(tmp_path)
     await session.handle(Hotkey(action="comment_now"))

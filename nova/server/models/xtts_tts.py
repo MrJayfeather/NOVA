@@ -1,9 +1,31 @@
 import asyncio
+import re
 import threading
 from pathlib import Path
 from typing import AsyncIterator
 
 from nova.server.models.base import TTSModel
+
+
+def split_for_tts(text: str, limit: int = 180) -> list[str]:
+    """XTTS искажает русскую речь на текстах длиннее ~182 символов —
+    режем на предложения, длинные предложения — по словам."""
+    parts = re.split(r"(?<=[.!?…])\s+", text.strip())
+    out: list[str] = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        while len(p) > limit:
+            cut = p[:limit]
+            idx = max(cut.rfind(", "), cut.rfind(" "))
+            if idx < 40:
+                idx = limit
+            out.append(p[:idx].strip())
+            p = p[idx:].strip()
+        if p:
+            out.append(p)
+    return out
 
 
 class XttsTTS(TTSModel):
@@ -44,16 +66,17 @@ class XttsTTS(TTSModel):
             import numpy as np
 
             try:
-                stream = self._model.inference_stream(
-                    text, "ru", self._latent, self._embedding
-                )
-                for chunk in stream:
-                    pcm = (
-                        (chunk.squeeze().clamp(-1, 1).cpu().numpy() * 32767)
-                        .astype(np.int16)
-                        .tobytes()
+                for sentence in split_for_tts(text):
+                    stream = self._model.inference_stream(
+                        sentence, "ru", self._latent, self._embedding
                     )
-                    loop.call_soon_threadsafe(out.put_nowait, pcm)
+                    for chunk in stream:
+                        pcm = (
+                            (chunk.squeeze().clamp(-1, 1).cpu().numpy() * 32767)
+                            .astype(np.int16)
+                            .tobytes()
+                        )
+                        loop.call_soon_threadsafe(out.put_nowait, pcm)
             except Exception as exc:
                 print(f"[nova] ошибка TTS: {exc!r}")
             finally:

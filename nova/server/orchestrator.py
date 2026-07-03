@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import time
@@ -25,7 +26,9 @@ class Session:
         llm: VisionLLM,
         tts: TTSModel,
         feedback_path: Path | None = None,
+        tts_timeout_s: float = 90.0,
     ):
+        self._tts_timeout_s = tts_timeout_s
         self._send = send
         self._engine = engine
         self._asr = asr
@@ -95,9 +98,14 @@ class Session:
             SpeakStart(utterance_id=uid, text=text, reason=reason, sample_rate=self._tts.sample_rate)
         )
         seq = 0
-        async for chunk in self._tts.synthesize(text):
-            await self._send(
-                AudioChunk(utterance_id=uid, seq=seq, pcm_b64=base64.b64encode(chunk).decode())
-            )
-            seq += 1
+        try:
+            async with asyncio.timeout(self._tts_timeout_s):
+                async for chunk in self._tts.synthesize(text):
+                    await self._send(
+                        AudioChunk(utterance_id=uid, seq=seq,
+                                   pcm_b64=base64.b64encode(chunk).decode())
+                    )
+                    seq += 1
+        except TimeoutError:
+            print("[nova] TTS завис — реплика оборвана, сессия жива")
         await self._send(SpeakEnd(utterance_id=uid))

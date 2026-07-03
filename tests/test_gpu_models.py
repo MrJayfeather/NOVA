@@ -2,6 +2,26 @@
 на инстансе гоняются вручную: uv run pytest tests/test_gpu_models.py"""
 import pytest
 
+from nova.server.models.xtts_tts import split_for_tts
+
+
+def test_split_short_text_untouched():
+    assert split_for_tts("Привет, как дела?") == ["Привет, как дела?"]
+
+
+def test_split_long_text_by_sentences():
+    text = "Первое предложение о чём-то важном. " * 3 + "И второе!"
+    parts = split_for_tts(text, limit=60)
+    assert all(len(p) <= 60 for p in parts)
+    assert "".join(parts).replace(" ", "") == text.replace(" ", "")
+
+
+def test_split_monster_sentence_by_words():
+    text = "слово " * 60  # одно «предложение» на 360 символов
+    parts = split_for_tts(text, limit=100)
+    assert len(parts) >= 3
+    assert all(len(p) <= 100 for p in parts)
+
 
 def test_whisper_asr_transcribes_silence():
     pytest.importorskip("faster_whisper")

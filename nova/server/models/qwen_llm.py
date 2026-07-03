@@ -55,7 +55,7 @@ class QwenVLM(VisionLLM):
             json={
                 "model": self._model,
                 "messages": messages,
-                "max_tokens": 200,
+                "max_tokens": 120,
                 "temperature": 0.8,
             },
         )
