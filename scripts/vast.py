@@ -108,6 +108,11 @@ def set_state(key: str, instance_id: int, state: str) -> None:
     r = httpx.put(f"{API}/instances/{instance_id}/", headers=_headers(key),
                   json={"state": state}, timeout=60)
     r.raise_for_status()
+    body = r.json()
+    # vast отдаёт ошибки с HTTP 200 (например resources_unavailable,
+    # когда GPU спящего инстанса заняли другие арендаторы)
+    if body.get("success") is False:
+        raise RuntimeError(f"vast: {body.get('error')}: {body.get('msg', '')[:120]}")
 
 
 def destroy(key: str, instance_id: int) -> None:

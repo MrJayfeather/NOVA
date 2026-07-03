@@ -29,15 +29,18 @@ def build_models(mock: bool, persona_prompt: str):
     )
     persona = os.environ.get("NOVA_PERSONA", "nova")
     ref_dir = Path("personas") / persona
-    if os.environ.get("NOVA_TTS", "xtts") == "fish":
+    ref_txt = ref_dir / "voice_sample.txt"
+    if os.environ.get("NOVA_TTS", "xtts") == "fish" and ref_txt.exists():
         from nova.server.models.fish_tts import FishTTS
 
         tts = FishTTS(
             url=os.environ.get("NOVA_FISH_URL", "http://127.0.0.1:8081/v1/tts"),
             reference_wav=ref_dir / "voice_sample.wav",
-            reference_text=(ref_dir / "voice_sample.txt").read_text(encoding="utf-8").strip(),
+            reference_text=ref_txt.read_text(encoding="utf-8").strip(),
         )
     else:
+        if os.environ.get("NOVA_TTS") == "fish":
+            print("[nova] нет voice_sample.txt — откатываюсь на xtts")
         tts = XttsTTS(speaker_wav=ref_dir / "voice_sample.wav")
     return asr, llm, tts
 
