@@ -1,6 +1,6 @@
 # NOVA — персональный ИИ-компаньон
 
-Этап 1: скелет (mock-модели, локально). Спека: `docs/superpowers/specs/2026-07-03-nova-companion-design.md`.
+Этап 1: скелет (mock-модели, локально). Спека: `docs/specs/2026-07-03-nova-companion-design.md`.
 
 ## Запуск (Windows, два терминала)
 
