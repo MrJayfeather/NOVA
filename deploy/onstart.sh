@@ -5,6 +5,7 @@ set -x
 export HF_HOME=/workspace/hf
 export COQUI_TOS_AGREED=1
 
+mkdir -p /workspace
 cd /workspace
 if [ ! -d NOVA ]; then
   git clone https://github.com/MrJayfeather/NOVA.git
