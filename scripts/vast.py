@@ -74,7 +74,8 @@ def my_instances(key: str) -> list[dict]:
 
 
 def create_instance(key: str, offer_id: int, token: str) -> None:
-    onstart = (ROOT / "deploy" / "onstart.sh").read_text(encoding="utf-8")
+    # CRLF из windows-копии ломает bash на инстансе
+    onstart = (ROOT / "deploy" / "onstart.sh").read_text(encoding="utf-8").replace("\r\n", "\n")
     body = {
         "client_id": "me",
         "image": IMAGE,
