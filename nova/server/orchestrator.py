@@ -9,6 +9,7 @@ from typing import Awaitable, Callable
 
 from nova.server.models.base import ASRModel, NO_COMMENT, TTSModel, VisionLLM
 from nova.server.proactive import ProactiveEngine
+from nova.server.tts_text import normalize_for_tts
 from nova.shared.protocol import (
     AudioChunk, AudioSegment, DetectorEvent, Frame, Hotkey,
     SpeakEnd, SpeakStart,
@@ -115,7 +116,8 @@ class Session:
         seq = 0
         try:
             async with asyncio.timeout(self._tts_timeout_s):
-                async for chunk in self._tts.synthesize(text):
+                # в синтез — произносимый текст; пользователю показан исходный
+                async for chunk in self._tts.synthesize(normalize_for_tts(text)):
                     await self._send(
                         AudioChunk(utterance_id=uid, seq=seq,
                                    pcm_b64=base64.b64encode(chunk).decode())

@@ -1,0 +1,40 @@
+from nova.server.tts_text import normalize_for_tts
+
+
+def test_integers_become_words():
+    assert normalize_for_tts("у тебя 25 монет") == "у тебя двадцать пять монет"
+
+
+def test_decimal_number():
+    out = normalize_for_tts("осталось 3.5 часа")
+    assert "три" in out and "пять" in out and "3" not in out
+
+
+def test_time_pattern():
+    out = normalize_for_tts("встреча в 2:30")
+    assert "два" in out and "тридцать" in out and ":" not in out
+
+
+def test_known_english_word():
+    assert "дискорд" in normalize_for_tts("зайди в Discord")
+
+
+def test_unknown_english_transliterated():
+    out = normalize_for_tts("режим stealth")
+    assert "стилт" in out
+    assert not any(c.isascii() and c.isalpha() for c in out)
+
+
+def test_symbols_spoken():
+    out = normalize_for_tts("загрузка 100%")
+    assert out == "загрузка сто процентов"
+
+
+def test_symbols_dropped_or_spaced():
+    out = normalize_for_tts("путь C:/games/mita")
+    assert "/" not in out
+
+
+def test_plain_russian_untouched():
+    s = "Привет, как дела? Всё отлично!"
+    assert normalize_for_tts(s) == s

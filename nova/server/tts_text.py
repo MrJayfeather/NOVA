@@ -1,0 +1,99 @@
+"""Подготовка текста к синтезу речи.
+
+TTS-модели коверкают цифры, латиницу и символы — переводим их в
+произносимый русский. Меняется только текст для синтезатора;
+то, что показывается пользователю, остаётся как есть.
+"""
+
+import re
+
+from num2words import num2words
+
+# символы -> слова (или пробел, если озвучивать нечего)
+_SYMBOLS = {
+    "%": " процентов",
+    "№": " номер ",
+    "$": " долларов",
+    "€": " евро",
+    "+": " плюс ",
+    "=": " равно ",
+    "&": " и ",
+    "#": " решётка ",
+    "@": " собака ",
+    "<": " меньше ",
+    ">": " больше ",
+    "*": " ",
+    "_": " ",
+    "~": " ",
+    "^": " ",
+    "|": " ",
+    "/": " ",
+    "\\": " ",
+}
+
+# частые слова — руками: транслит по буквам их коверкает
+_WORDS = {
+    "ok": "окей", "hi": "хай", "gg": "джиджи", "wp": "вэпэ",
+    "windows": "виндоус", "discord": "дискорд", "minecraft": "майнкрафт",
+    "python": "пайтон", "powershell": "пауэршелл", "google": "гугл",
+    "youtube": "ютуб", "twitch": "твич", "steam": "стим", "github": "гитхаб",
+    "wifi": "вайфай", "online": "онлайн", "update": "апдейт",
+    "chrome": "хром", "telegram": "телеграм", "nvidia": "энвидиа",
+    "fps": "эфпээс", "gpu": "джипию", "cpu": "ципию", "hp": "хэпэ",
+    "pc": "писи", "ai": "эйай", "vs": "версус",
+}
+
+# диграфы и буквы для запасного транслита незнакомых слов
+_DIGRAPHS = [
+    ("sch", "ск"), ("tch", "ч"), ("sh", "ш"), ("ch", "ч"), ("th", "т"),
+    ("ph", "ф"), ("wh", "в"), ("ck", "к"), ("oo", "у"), ("ee", "и"),
+    ("ea", "и"), ("ay", "ей"), ("ai", "ей"), ("ou", "ау"), ("qu", "кв"),
+    ("kn", "н"), ("ng", "нг"),
+]
+_LETTERS = {
+    "a": "а", "b": "б", "c": "к", "d": "д", "e": "е", "f": "ф", "g": "г",
+    "h": "х", "i": "и", "j": "дж", "k": "к", "l": "л", "m": "м", "n": "н",
+    "o": "о", "p": "п", "q": "к", "r": "р", "s": "с", "t": "т", "u": "у",
+    "v": "в", "w": "в", "x": "кс", "y": "й", "z": "з",
+}
+
+
+def _translit(word: str) -> str:
+    w = word.lower()
+    for digraph, repl in _DIGRAPHS:
+        w = w.replace(digraph, repl)
+    return "".join(_LETTERS.get(ch, ch) for ch in w)
+
+
+def _latin_word(m: re.Match) -> str:
+    word = m.group(0)
+    return _WORDS.get(word.lower(), _translit(word))
+
+
+def _number(m: re.Match) -> str:
+    token = m.group(0).replace(",", ".")
+    try:
+        if "." in token:
+            return num2words(float(token), lang="ru")
+        return num2words(int(token), lang="ru")
+    except (ValueError, OverflowError):
+        return token
+
+
+def normalize_for_tts(text: str) -> str:
+    out = text
+    # время вида 2:30 — «два тридцать»
+    out = re.sub(
+        r"\b(\d{1,2}):(\d{2})\b",
+        lambda m: f"{num2words(int(m.group(1)), lang='ru')} "
+                  f"{num2words(int(m.group(2)), lang='ru')}",
+        out,
+    )
+    # числа, включая десятичные с точкой или запятой между цифрами
+    out = re.sub(r"\d+[.,]\d+|\d+", _number, out)
+    # латинские слова
+    out = re.sub(r"[A-Za-z]+", _latin_word, out)
+    for sym, repl in _SYMBOLS.items():
+        out = out.replace(sym, repl)
+    # подчистить множественные пробелы
+    return re.sub(r"\s{2,}", " ", out).strip()

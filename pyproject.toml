@@ -20,6 +20,7 @@ dependencies = [
     "pysilero-vad>=2,<3",
     "httpx>=0.27",
     "ormsgpack>=1.5",
+    "num2words>=0.5.13",
 ]
 
 [dependency-groups]
