@@ -11,8 +11,10 @@ export LD_LIBRARY_PATH="$(python3 -c 'import nvidia.cudnn; print(list(nvidia.cud
 
 cd /workspace/NOVA && git pull
 
-# мозг (vLLM) — если ещё не поднят
-if ! curl -s http://127.0.0.1:5000/v1/models > /dev/null; then
+# мозг (vLLM) — если ещё не поднят (процесс тоже считается: во время
+# загрузки весов эндпоинт ещё молчит, второй запуск устроил бы конфликт)
+if ! curl -s http://127.0.0.1:5000/v1/models > /dev/null \
+   && ! pgrep -f '[v]llm serve' > /dev/null; then
   nohup vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct-FP8 \
     --host 127.0.0.1 --port 5000 --max-model-len 16384 \
     --gpu-memory-utilization 0.75 --limit-mm-per-prompt '{"image":12}' \
