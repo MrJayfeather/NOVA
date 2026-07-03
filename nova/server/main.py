@@ -1,4 +1,5 @@
 import os
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -13,6 +14,24 @@ from nova.shared.protocol import (
 )
 
 
+def build_models(mock: bool, persona_prompt: str):
+    if mock:
+        return MockASR(), MockLLM(persona_prompt=persona_prompt), MockTTS()
+    from nova.server.models.qwen_llm import QwenVLM
+    from nova.server.models.whisper_asr import WhisperASR
+    from nova.server.models.xtts_tts import XttsTTS
+
+    asr = WhisperASR(model_name=os.environ.get("NOVA_WHISPER", "large-v3-turbo"))
+    llm = QwenVLM(
+        persona_prompt=persona_prompt,
+        base_url=os.environ.get("NOVA_VLLM_URL", "http://127.0.0.1:5000/v1"),
+        model=os.environ.get("NOVA_MODEL", "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8"),
+    )
+    persona = os.environ.get("NOVA_PERSONA", "nova")
+    tts = XttsTTS(speaker_wav=Path("personas") / persona / "voice_sample.wav")
+    return asr, llm, tts
+
+
 def create_app(
     mock: bool = True,
     profiles_root: Path = Path("profiles"),
@@ -20,9 +39,19 @@ def create_app(
     feedback_path: Path = Path("data/feedback.jsonl"),
     token: str = "",
 ) -> FastAPI:
-    if not mock:
-        raise NotImplementedError("Реальные модели — этап 2; сейчас только NOVA_MOCK=1")
     app = FastAPI(title="NOVA server")
+    persona = os.environ.get("NOVA_PERSONA", "nova")
+    persona_prompt = load_persona_prompt(persona, personas_root)
+    asr, llm, tts = build_models(mock, persona_prompt)
+    app.state.clients = 0
+    app.state.last_activity = time.time()
+
+    @app.get("/health")
+    def health():
+        return {
+            "clients": app.state.clients,
+            "idle_s": round(time.time() - app.state.last_activity, 1),
+        }
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket):
@@ -43,7 +72,6 @@ def create_app(
             return
 
         profile = load_profile(first.profile, profiles_root)
-        persona_prompt = load_persona_prompt(first.persona, personas_root)
         engine = ProactiveEngine(
             cooldown_s=profile.proactive.cooldown_s,
             talkativeness=profile.proactive.talkativeness,
@@ -54,20 +82,22 @@ def create_app(
             await ws.send_text(dump_message(msg))
 
         session = Session(
-            send=send,
-            engine=engine,
-            asr=MockASR(),
-            llm=MockLLM(persona_prompt=persona_prompt),
-            tts=MockTTS(),
+            send=send, engine=engine, asr=asr, llm=llm, tts=tts,
             feedback_path=feedback_path,
         )
-        await send(HelloAck(mock=True))
+        await send(HelloAck(mock=mock))
+        app.state.clients += 1
+        app.state.last_activity = time.time()
         try:
             while True:
                 msg = parse_client_message(await ws.receive_text())
+                app.state.last_activity = time.time()
                 await session.handle(msg)
         except WebSocketDisconnect:
             pass
+        finally:
+            app.state.clients -= 1
+            app.state.last_activity = time.time()
 
     return app
 

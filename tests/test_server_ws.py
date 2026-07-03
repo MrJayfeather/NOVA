@@ -35,6 +35,20 @@ def test_hello_then_event_flow(tmp_path):
         assert msg["type"] == "speak_end"
 
 
+def test_health_reports_clients_and_idle(tmp_path):
+    client = make_client(tmp_path)
+    r = client.get("/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["clients"] == 0
+    assert body["idle_s"] >= 0
+
+    with client.websocket_connect("/ws") as ws:
+        ws.send_text(dump_message(Hello(profile="desktop", persona="nova")))
+        ws.receive_text()
+        assert client.get("/health").json()["clients"] == 1
+
+
 def test_wrong_token_closes_4002(tmp_path):
     app = create_app(
         mock=True,
