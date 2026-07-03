@@ -114,7 +114,7 @@ async def amain() -> None:
     conn = Connection(
         cfg.server_url,
         on_message=make_on_message(player, metrics, state),
-        hello=Hello(profile=cfg.profile, persona=cfg.persona),
+        hello=Hello(profile=cfg.profile, persona=cfg.persona, token=cfg.token),
     )
     detector = FrameDetector(
         motion_threshold=profile.detector.motion_threshold,

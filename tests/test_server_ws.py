@@ -35,6 +35,37 @@ def test_hello_then_event_flow(tmp_path):
         assert msg["type"] == "speak_end"
 
 
+def test_wrong_token_closes_4002(tmp_path):
+    app = create_app(
+        mock=True,
+        profiles_root=ROOT / "profiles",
+        personas_root=ROOT / "personas",
+        feedback_path=tmp_path / "feedback.jsonl",
+        token="secret123",
+    )
+    client = TestClient(app)
+    with client.websocket_connect("/ws") as ws:
+        ws.send_text(dump_message(Hello(profile="desktop", persona="nova", token="wrong")))
+        data = ws.receive()
+        assert data["type"] == "websocket.close"
+        assert data["code"] == 4002
+
+
+def test_correct_token_accepted(tmp_path):
+    app = create_app(
+        mock=True,
+        profiles_root=ROOT / "profiles",
+        personas_root=ROOT / "personas",
+        feedback_path=tmp_path / "feedback.jsonl",
+        token="secret123",
+    )
+    client = TestClient(app)
+    with client.websocket_connect("/ws") as ws:
+        ws.send_text(dump_message(Hello(profile="desktop", persona="nova", token="secret123")))
+        ack = json.loads(ws.receive_text())
+        assert ack["type"] == "hello_ack"
+
+
 def test_non_hello_first_message_closes(tmp_path):
     client = make_client(tmp_path)
     with client.websocket_connect("/ws") as ws:

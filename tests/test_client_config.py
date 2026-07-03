@@ -21,3 +21,4 @@ def test_defaults_applied(tmp_path):
     assert cfg.profile == "desktop"
     assert cfg.burst_frames == 6
     assert cfg.jpeg_quality == 85
+    assert cfg.token == ""

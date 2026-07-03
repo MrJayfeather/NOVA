@@ -1,6 +1,7 @@
 server_url: ws://localhost:8000/ws
 profile: desktop
 persona: nova
+token: ""
 periodic_fps: 1.0
 burst_frames: 6
 jpeg_quality: 85

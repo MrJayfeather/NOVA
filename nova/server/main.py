@@ -18,6 +18,7 @@ def create_app(
     profiles_root: Path = Path("profiles"),
     personas_root: Path = Path("personas"),
     feedback_path: Path = Path("data/feedback.jsonl"),
+    token: str = "",
 ) -> FastAPI:
     if not mock:
         raise NotImplementedError("Реальные модели — этап 2; сейчас только NOVA_MOCK=1")
@@ -36,6 +37,9 @@ def create_app(
             return
         if first.protocol != PROTOCOL_VERSION:
             await ws.close(code=4001)
+            return
+        if token and first.token != token:
+            await ws.close(code=4002)
             return
 
         profile = load_profile(first.profile, profiles_root)
@@ -72,4 +76,7 @@ if __name__ == "__main__":
     import uvicorn
 
     mock = os.environ.get("NOVA_MOCK", "1") == "1"
-    uvicorn.run(create_app(mock=mock), host="0.0.0.0", port=8000)
+    uvicorn.run(
+        create_app(mock=mock, token=os.environ.get("NOVA_TOKEN", "")),
+        host="0.0.0.0", port=8000,
+    )

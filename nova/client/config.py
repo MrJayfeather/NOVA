@@ -17,6 +17,7 @@ class ClientConfig(BaseModel):
     server_url: str
     profile: str = "desktop"
     persona: str = "nova"
+    token: str = ""
     periodic_fps: float = 1.0
     burst_frames: int = 6
     jpeg_quality: int = 85

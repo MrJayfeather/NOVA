@@ -10,6 +10,7 @@ class Hello(BaseModel):
     protocol: int = PROTOCOL_VERSION
     profile: str
     persona: str
+    token: str = ""
 
 
 class Frame(BaseModel):
