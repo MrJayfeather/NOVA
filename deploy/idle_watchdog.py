@@ -2,6 +2,7 @@
 чтобы не жечь деньги. Работает на самом инстансе."""
 import os
 import re
+import subprocess
 import time
 
 import httpx
@@ -9,9 +10,21 @@ import httpx
 API = "https://console.vast.ai/api/v0"  # смена состояния инстанса — на v0
 IDLE_LIMIT_S = 900.0
 
+# тяжёлая GPU-работа без подключённых клиентов — тоже активность:
+# однажды вачдог усыпил инстанс посреди дообучения голоса
+BUSY_PATTERNS = ("fish_speech/train.py", "merge_lora", "extract_vq",
+                 "build_dataset", "finetune_prep")
+
 
 def should_stop(clients: int, idle_s: float, limit_s: float = IDLE_LIMIT_S) -> bool:
     return clients == 0 and idle_s >= limit_s
+
+
+def gpu_work_running() -> bool:
+    for pat in BUSY_PATTERNS:
+        if subprocess.run(["pgrep", "-f", pat], capture_output=True).returncode == 0:
+            return True
+    return False
 
 
 def instance_id() -> str | None:
@@ -32,6 +45,8 @@ def main() -> None:
             h = httpx.get("http://127.0.0.1:8000/health", timeout=5).json()
         except Exception:
             continue  # оркестратор ещё грузится
+        if gpu_work_running():
+            continue
         if should_stop(h.get("clients", 0), h.get("idle_s", 0.0)):
             print("[watchdog] 15 минут простоя — останавливаю инстанс")
             httpx.put(
