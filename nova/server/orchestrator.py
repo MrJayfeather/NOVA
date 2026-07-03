@@ -66,8 +66,11 @@ class Session:
             except Exception as exc:
                 print(f"[nova] ошибка модели (reply): {exc!r}")
                 return
+            print(f"[nova] reply: {reply!r}")
+            # история — чистым текстом, иначе модель копирует свои же
+            # ремарки из прошлых реплик и злоупотребляет ими
             self._history.append({"role": "user", "content": text})
-            self._history.append({"role": "assistant", "content": reply})
+            self._history.append({"role": "assistant", "content": strip_markers(reply)})
             await self._speak(reply, reason="reply", heard=text)
         elif isinstance(msg, DetectorEvent):
             decision = self._engine.on_event(msg.event, now=time.time())
@@ -95,7 +98,8 @@ class Session:
             return
         if comment.strip() == NO_COMMENT:
             return
-        self._history.append({"role": "assistant", "content": comment})
+        print(f"[nova] comment: {comment!r}")
+        self._history.append({"role": "assistant", "content": strip_markers(comment)})
         await self._speak(comment, reason=reason)
 
     def _write_feedback(self, direction: str) -> None:
