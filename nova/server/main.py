@@ -39,7 +39,7 @@ def build_models(mock: bool, persona_prompt: str):
             api_key=os.environ["NOVA_FISH_KEY"],
             model=os.environ.get("NOVA_FISH_MODEL", "s2.1-pro-free"),
             reference_id=os.environ.get(
-                "NOVA_FISH_REF_ID", "6dc11f3f67a543f6ad4537a4a347e224"),
+                "NOVA_FISH_REF_ID", "4075192824f64dc6aabbbf70124d6a01"),
         )
     elif mode in ("fish", "fishcloud") and ref_txt.exists():
         if mode == "fishcloud":
