@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import AsyncIterator
 
+NO_COMMENT = "PASS"
+
 
 class ASRModel(ABC):
     @abstractmethod
@@ -9,10 +11,12 @@ class ASRModel(ABC):
 
 class VisionLLM(ABC):
     @abstractmethod
-    async def reply_to_user(self, text: str) -> str: ...
+    async def reply_to_user(self, text: str, history: list[dict]) -> str: ...
 
     @abstractmethod
-    async def comment_on_event(self, event: str, frames: list[bytes]) -> str: ...
+    async def comment_on_event(
+        self, event: str, frames: list[bytes], history: list[dict]
+    ) -> str: ...
 
 
 class TTSModel(ABC):

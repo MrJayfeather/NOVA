@@ -6,7 +6,7 @@ from collections import deque
 from pathlib import Path
 from typing import Awaitable, Callable
 
-from nova.server.models.base import ASRModel, TTSModel, VisionLLM
+from nova.server.models.base import ASRModel, NO_COMMENT, TTSModel, VisionLLM
 from nova.server.proactive import ProactiveEngine
 from nova.shared.protocol import (
     AudioChunk, AudioSegment, DetectorEvent, Frame, Hotkey,
@@ -33,32 +33,50 @@ class Session:
         self._tts = tts
         self._feedback_path = feedback_path
         self._frames: deque[bytes] = deque(maxlen=8)
+        self._history: deque[dict] = deque(maxlen=24)
         self._last_text: str = ""
 
     async def handle(self, msg) -> None:
         if isinstance(msg, Frame):
             self._frames.append(base64.b64decode(msg.jpeg_b64))
         elif isinstance(msg, AudioSegment):
-            text = await self._asr.transcribe(base64.b64decode(msg.pcm_b64), msg.sample_rate)
-            reply = await self._llm.reply_to_user(text)
+            try:
+                text = await self._asr.transcribe(base64.b64decode(msg.pcm_b64), msg.sample_rate)
+                reply = await self._llm.reply_to_user(text, list(self._history))
+            except Exception as exc:
+                print(f"[nova] ошибка модели (reply): {exc!r}")
+                return
+            self._history.append({"role": "user", "content": text})
+            self._history.append({"role": "assistant", "content": reply})
             await self._speak(reply, reason="reply")
         elif isinstance(msg, DetectorEvent):
             decision = self._engine.on_event(msg.event, now=time.time())
             if decision.speak:
-                comment = await self._llm.comment_on_event(msg.event, list(self._frames))
-                await self._speak(comment, reason="proactive")
+                await self._comment(msg.event, reason="proactive")
         elif isinstance(msg, Hotkey):
             await self._handle_hotkey(msg)
 
     async def _handle_hotkey(self, msg: Hotkey) -> None:
         if msg.action == "comment_now":
             self._engine.on_event("comment_now", now=time.time(), forced=True)
-            comment = await self._llm.comment_on_event("user_request", list(self._frames))
-            await self._speak(comment, reason="forced")
+            await self._comment("user_request", reason="forced")
         elif msg.action == "toggle_pause":
             self._engine.toggle_pause()
         elif msg.action in ("feedback_up", "feedback_down"):
             self._write_feedback("up" if msg.action == "feedback_up" else "down")
+
+    async def _comment(self, event: str, reason: str) -> None:
+        try:
+            comment = await self._llm.comment_on_event(
+                event, list(self._frames), list(self._history)
+            )
+        except Exception as exc:
+            print(f"[nova] ошибка модели (comment): {exc!r}")
+            return
+        if comment.strip() == NO_COMMENT:
+            return
+        self._history.append({"role": "assistant", "content": comment})
+        await self._speak(comment, reason=reason)
 
     def _write_feedback(self, direction: str) -> None:
         if self._feedback_path is None:

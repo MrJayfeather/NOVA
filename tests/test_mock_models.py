@@ -11,9 +11,9 @@ async def test_mock_asr_reports_duration():
 
 async def test_mock_llm_replies_and_comments():
     llm = MockLLM(persona_prompt="Ты — NOVA.")
-    reply = await llm.reply_to_user("привет")
+    reply = await llm.reply_to_user("привет", history=[])
     assert "привет" in reply
-    comment = await llm.comment_on_event("scene_change", frames=[b"jpg"])
+    comment = await llm.comment_on_event("scene_change", frames=[b"jpg"], history=[])
     assert "scene_change" in comment
     assert "1" in comment  # количество кадров
 

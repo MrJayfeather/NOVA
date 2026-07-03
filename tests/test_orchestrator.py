@@ -2,6 +2,7 @@ import base64
 import json
 from pathlib import Path
 
+from nova.server.models.base import NO_COMMENT, VisionLLM
 from nova.server.models.mock import MockASR, MockLLM, MockTTS
 from nova.server.orchestrator import Session
 from nova.server.proactive import ProactiveEngine
@@ -64,6 +65,72 @@ async def test_pause_blocks_events_but_not_forced():
     await session.handle(Hotkey(action="comment_now"))
     start, _, _ = speak_sequence(sent)
     assert start.reason == "forced"
+
+
+class RecordingLLM(VisionLLM):
+    """Запоминает, с какой историей его вызвали."""
+
+    def __init__(self, reply="ок", comment="вижу"):
+        self.calls = []
+        self._reply, self._comment = reply, comment
+
+    async def reply_to_user(self, text, history):
+        self.calls.append(("reply", text, list(history)))
+        return self._reply
+
+    async def comment_on_event(self, event, frames, history):
+        self.calls.append(("comment", event, list(history)))
+        return self._comment
+
+
+def make_session_with(llm, tmp_path=None):
+    sent = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    session = Session(
+        send=send,
+        engine=ProactiveEngine(cooldown_s=0.0, talkativeness=0.5, dedupe_window_s=0.0),
+        asr=MockASR(),
+        llm=llm,
+        tts=MockTTS(),
+        feedback_path=(tmp_path / "feedback.jsonl") if tmp_path else None,
+    )
+    return session, sent
+
+
+async def test_history_accumulates_across_turns():
+    llm = RecordingLLM(reply="ответ")
+    session, _ = make_session_with(llm)
+    pcm_b64 = base64.b64encode(b"\x00\x00" * 1600).decode()
+    await session.handle(AudioSegment(ts=1.0, pcm_b64=pcm_b64, sample_rate=16000))
+    await session.handle(AudioSegment(ts=2.0, pcm_b64=pcm_b64, sample_rate=16000))
+    # второй вызов должен видеть первый ход (user + assistant)
+    _, _, history = llm.calls[1]
+    assert len(history) == 2
+    assert history[0]["role"] == "user"
+    assert history[1] == {"role": "assistant", "content": "ответ"}
+
+
+async def test_pass_comment_is_silent():
+    llm = RecordingLLM(comment=NO_COMMENT)
+    session, sent = make_session_with(llm)
+    await session.handle(DetectorEvent(ts=1.0, event="scene_change"))
+    assert sent == []
+
+
+async def test_model_error_does_not_crash_session():
+    class BrokenLLM(VisionLLM):
+        async def reply_to_user(self, text, history):
+            raise RuntimeError("gpu on fire")
+
+        async def comment_on_event(self, event, frames, history):
+            raise RuntimeError("gpu on fire")
+
+    session, sent = make_session_with(BrokenLLM())
+    await session.handle(DetectorEvent(ts=1.0, event="scene_change"))  # не должно бросить
+    assert sent == []
 
 
 async def test_feedback_written_to_jsonl(tmp_path):
