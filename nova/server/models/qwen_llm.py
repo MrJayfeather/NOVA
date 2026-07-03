@@ -12,6 +12,15 @@ COMMENT_INSTRUCTION = (
 )
 
 
+def trim_to_sentence(text: str) -> str:
+    """Обрезка по лимиту токенов рвёт фразу на полуслове — не озвучиваем огрызок."""
+    t = text.strip()
+    m = max(t.rfind("."), t.rfind("!"), t.rfind("?"), t.rfind("…"))
+    if m >= 20:
+        return t[: m + 1]
+    return t
+
+
 def _image_part(jpeg: bytes) -> dict:
     b64 = base64.b64encode(jpeg).decode()
     return {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
@@ -55,12 +64,15 @@ class QwenVLM(VisionLLM):
             json={
                 "model": self._model,
                 "messages": messages,
-                "max_tokens": 90,
+                "max_tokens": 110,
                 "temperature": 0.8,
+                # штрафы против самокопирования («целая палитра» шесть раз подряд)
+                "presence_penalty": 0.8,
+                "frequency_penalty": 0.6,
             },
         )
         r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"].strip()
+        return trim_to_sentence(r.json()["choices"][0]["message"]["content"])
 
     async def reply_to_user(
         self, text: str, frames: list[bytes], history: list[dict]

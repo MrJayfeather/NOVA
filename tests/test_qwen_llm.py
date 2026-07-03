@@ -1,5 +1,18 @@
 from nova.server.models.base import NO_COMMENT
-from nova.server.models.qwen_llm import QwenVLM
+from nova.server.models.qwen_llm import QwenVLM, trim_to_sentence
+
+
+def test_trim_cuts_dangling_tail():
+    assert trim_to_sentence("Первая фраза целиком. И вторая тоже! А третья обрыва") == \
+        "Первая фраза целиком. И вторая тоже!"
+
+
+def test_trim_keeps_complete_text():
+    assert trim_to_sentence("Всё сказано полностью.") == "Всё сказано полностью."
+
+
+def test_trim_keeps_short_fragment_without_punctuation():
+    assert trim_to_sentence("ну да") == "ну да"
 
 
 def make_llm():
