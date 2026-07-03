@@ -38,9 +38,25 @@ if [ ! -d /workspace/fishenv ]; then
 fi
 if [ ! -f /workspace/checkpoints/openaudio-s1-mini/codec.pth ]; then
   [ -f /workspace/hf_token ] && export HF_TOKEN=$(cat /workspace/hf_token)
-  # через python-api: имя cli-команды меняется между версиями huggingface_hub
-  /workspace/fishenv/bin/python -c "import os; from huggingface_hub import snapshot_download; snapshot_download('fishaudio/openaudio-s1-mini', local_dir='/workspace/checkpoints/openaudio-s1-mini', token=os.environ.get('HF_TOKEN') or None)" \
-    > /workspace/hfdl.log 2>&1
+  # через python-api (имя cli-команды меняется между версиями huggingface_hub);
+  # цикл повторов: у хостов рвутся долгие соединения, докачка идёт с места обрыва
+  cat > /workspace/dl_s1.py <<'PY'
+import os, time
+from huggingface_hub import snapshot_download
+for attempt in range(12):
+    try:
+        snapshot_download('fishaudio/openaudio-s1-mini',
+                          local_dir='/workspace/checkpoints/openaudio-s1-mini',
+                          token=os.environ.get('HF_TOKEN') or None)
+        print('S1_DONE')
+        break
+    except Exception as e:
+        print(f'attempt {attempt}: {type(e).__name__}: {e}')
+        time.sleep(5)
+else:
+    raise SystemExit(1)
+PY
+  /workspace/fishenv/bin/python /workspace/dl_s1.py > /workspace/hfdl.log 2>&1
 fi
 
 bash /workspace/NOVA/deploy/runner.sh
