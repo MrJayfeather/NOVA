@@ -1,4 +1,4 @@
-from nova.server.tts_text import normalize_for_tts
+from nova.server.tts_text import normalize_for_tts, strip_markers
 
 
 def test_integers_become_words():
@@ -38,3 +38,19 @@ def test_symbols_dropped_or_spaced():
 def test_plain_russian_untouched():
     s = "Привет, как дела? Всё отлично!"
     assert normalize_for_tts(s) == s
+
+
+def test_emotion_markers_survive_normalization():
+    out = normalize_for_tts("[sarcastic] Ну у тебя и 25 фпс. [laughing]")
+    assert "[sarcastic]" in out and "[laughing]" in out
+    assert "двадцать пять" in out
+
+
+def test_strip_markers_for_display():
+    s = "[sarcastic] Ну ты гений. [laughing] Прям вау."
+    assert strip_markers(s) == "Ну ты гений. Прям вау."
+
+
+def test_marker_with_space_and_hyphen():
+    out = normalize_for_tts("[soft tone] тише. [long-break] дальше")
+    assert "[soft tone]" in out and "[long-break]" in out

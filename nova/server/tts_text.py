@@ -9,6 +9,15 @@ import re
 
 from num2words import num2words
 
+# эмоциональные ремарки fish s2 вида [sarcastic], [soft tone] — латиница
+# в квадратных скобках; уходят в синтез, но не на экран
+_MARKER_RE = re.compile(r"\[[a-z][a-z '\-]*\]")
+
+
+def strip_markers(text: str) -> str:
+    """Текст для экрана/истории — без голосовых ремарок."""
+    return re.sub(r"\s{2,}", " ", _MARKER_RE.sub("", text)).strip()
+
 # символы -> слова (или пробел, если озвучивать нечего)
 _SYMBOLS = {
     "%": " процентов",
@@ -81,7 +90,15 @@ def _number(m: re.Match) -> str:
 
 
 def normalize_for_tts(text: str) -> str:
-    out = text
+    # спрятать ремарки, чтобы транслитерация не превратила [sarcastic]
+    # в [саркастик]; вернуть на место в конце
+    markers: list[str] = []
+
+    def _hide(m: re.Match) -> str:
+        markers.append(m.group(0))
+        return f"\x00{len(markers) - 1}\x00"
+
+    out = _MARKER_RE.sub(_hide, text)
     # время вида 2:30 — «два тридцать»
     out = re.sub(
         r"\b(\d{1,2}):(\d{2})\b",
@@ -95,5 +112,6 @@ def normalize_for_tts(text: str) -> str:
     out = re.sub(r"[A-Za-z]+", _latin_word, out)
     for sym, repl in _SYMBOLS.items():
         out = out.replace(sym, repl)
+    out = re.sub(r"\x00(\d+)\x00", lambda m: markers[int(m.group(1))], out)
     # подчистить множественные пробелы
     return re.sub(r"\s{2,}", " ", out).strip()
