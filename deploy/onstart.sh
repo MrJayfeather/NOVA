@@ -29,6 +29,9 @@ if [ ! -d /workspace/fishenv ]; then
   apt-get install -y -qq portaudio19-dev >> /workspace/apt.log 2>&1
   python3 -m venv /workspace/fishenv
   git clone https://github.com/fishaudio/fish-speech /workspace/fish-speech
+  # пин на последний S1-совместимый коммит: дальше main переписан под S2
+  # (токенизатор через AutoTokenizer не читает tiktoken-чекпоинт S1-mini)
+  git -C /workspace/fish-speech checkout 781bf1c
   # pip зацикливается на переборе версий (transformers без нижней границы
   # + datasets==2.18.0) — прижимаем констрейнтом; uv не подходит: не доверяет
   # TLS-сертификатам некоторых хостов (UnknownIssuer)
