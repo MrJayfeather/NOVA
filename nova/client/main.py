@@ -13,7 +13,7 @@ from nova.client.detector import BurstCollector, FrameDetector
 from nova.client.metrics import Metrics
 from nova.shared.profiles import load_profile
 from nova.shared.protocol import (
-    AudioSegment, DetectorEvent, Frame, Hello, Hotkey, SpeakStart,
+    AudioSegment, DetectorEvent, Frame, Hello, Hotkey, SpeakEnd, SpeakStart,
 )
 
 
@@ -54,6 +54,11 @@ def make_on_message(player: Player, metrics: Metrics, state: dict):
             latency = time.time() - state.get("last_event_ts", time.time())
             metrics.log("speak_latency", latency_s=round(latency, 3), reason=msg.reason)
             print(f"[NOVA:{msg.reason}] {msg.text}")
+            state["speaking"] = True
+        elif isinstance(msg, SpeakEnd):
+            state["speaking"] = False
+            # ещё немного не слушаем — хвост из колонок затихает
+            state["deaf_until"] = time.time() + 1.0
         player.handle(msg)
 
     return on_message
@@ -62,11 +67,15 @@ def make_on_message(player: Player, metrics: Metrics, state: dict):
 async def audio_in_loop(conn, source, state: dict):
     while True:
         segment = await asyncio.to_thread(source.get)
-        if segment is not None:
-            state["last_event_ts"] = time.time()
-            conn.send(AudioSegment(
-                ts=time.time(), pcm_b64=base64.b64encode(segment).decode(), sample_rate=16000,
-            ))
+        if segment is None:
+            continue
+        # не слушаем себя, пока NOVA говорит (иначе звуковая петля)
+        if state.get("speaking") or time.time() < state.get("deaf_until", 0):
+            continue
+        state["last_event_ts"] = time.time()
+        conn.send(AudioSegment(
+            ts=time.time(), pcm_b64=base64.b64encode(segment).decode(), sample_rate=16000,
+        ))
 
 
 async def hotkey_loop(conn, player: Player, actions: asyncio.Queue, state: dict):
