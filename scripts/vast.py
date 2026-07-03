@@ -38,6 +38,8 @@ def pick_offer(offers: list[dict], min_disk: float = 80.0) -> dict | None:
         and o.get("reliability2", 0) >= 0.98
         and o.get("inet_down", 0) >= 200
         and o.get("disk_space", 0) >= min_disk
+        # хосты из Китая не достучатся до huggingface/github
+        and not any(cc in (o.get("geolocation") or "") for cc in ("CN", "China"))
     ]
     return min(ok, key=lambda o: o.get("dph_total", 9e9)) if ok else None
 
@@ -141,7 +143,7 @@ def cmd_search(key: str) -> None:
     for o in sorted(search_offers(key), key=lambda o: o["dph_total"])[:10]:
         print(f"  {o['gpu_name']:<14} {o['gpu_ram'] / 1024:.0f}ГБ  "
               f"${o['dph_total']:.3f}/ч  надёжн.{o.get('reliability2', 0):.2f}  "
-              f"↓{o.get('inet_down', 0):.0f}Мбит  id={o['id']}")
+              f"↓{o.get('inet_down', 0):.0f}Мбит  {o.get('geolocation') or '?':<16} id={o['id']}")
 
 
 def cmd_up(key: str, env_path: Path, env: dict, write_config: bool) -> None:

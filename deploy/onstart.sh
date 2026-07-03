@@ -7,8 +7,14 @@ export COQUI_TOS_AGREED=1
 
 mkdir -p /workspace
 cd /workspace
+for i in 1 2 3 4 5; do
+  [ -d NOVA ] && break
+  git clone https://github.com/MrJayfeather/NOVA.git && break
+  echo "clone failed, retry $i"; sleep 10
+done
 if [ ! -d NOVA ]; then
-  git clone https://github.com/MrJayfeather/NOVA.git
+  echo "FATAL: git clone не удался — у хоста нет доступа к github"
+  exit 1
 fi
 cd NOVA && git pull
 
@@ -26,8 +32,15 @@ nohup vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct-FP8 \
   --limit-mm-per-prompt '{"image":12}' \
   > /workspace/vllm.log 2>&1 &
 
-# ждём готовности vLLM, потом поднимаем оркестратор
-until curl -s http://127.0.0.1:5000/v1/models > /dev/null; do sleep 10; done
+# ждём готовности vLLM (максимум ~45 минут), потом поднимаем оркестратор
+for i in $(seq 1 270); do
+  curl -s http://127.0.0.1:5000/v1/models > /dev/null && break
+  sleep 10
+done
+if ! curl -s http://127.0.0.1:5000/v1/models > /dev/null; then
+  echo "FATAL: vLLM не поднялся за 45 минут — смотри /workspace/vllm.log"
+  exit 1
+fi
 
 cd /workspace/NOVA
 nohup python3 -m nova.server.main > /workspace/nova.log 2>&1 &
