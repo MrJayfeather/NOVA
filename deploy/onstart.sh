@@ -29,8 +29,12 @@ if [ ! -d /workspace/fishenv ]; then
   apt-get install -y -qq portaudio19-dev >> /workspace/apt.log 2>&1
   python3 -m venv /workspace/fishenv
   git clone https://github.com/fishaudio/fish-speech /workspace/fish-speech
-  /workspace/fishenv/bin/pip install -e /workspace/fish-speech "huggingface_hub[cli]" \
-    -i https://pypi.org/simple > /workspace/fishpip.log 2>&1
+  # обычный pip зацикливается на переборе версий (transformers без нижней
+  # границы + datasets==2.18.0) — ставим резолвером uv
+  python3 -m pip install -q uv -i https://pypi.org/simple
+  uv pip install --python /workspace/fishenv/bin/python \
+    --index-url https://pypi.org/simple \
+    -e /workspace/fish-speech "huggingface_hub[cli]" > /workspace/fishpip.log 2>&1
 fi
 if [ ! -f /workspace/checkpoints/openaudio-s1-mini/codec.pth ]; then
   [ -f /workspace/hf_token ] && export HF_TOKEN=$(cat /workspace/hf_token)
