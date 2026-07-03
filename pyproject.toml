@@ -19,6 +19,7 @@ dependencies = [
     # питоне; 2.x — чистый python + предсобранный onnxruntime
     "pysilero-vad>=2,<3",
     "httpx>=0.27",
+    "ormsgpack>=1.5",
 ]
 
 [dependency-groups]
