@@ -71,3 +71,11 @@ def test_leading_emotion_kept():
 def test_mid_text_laugh_kept():
     s = "Ну ты дал. [laughing] Ладно, живи."
     assert drop_leading_sounds(s) == s
+
+
+def test_asr_garbage_detected():
+    from nova.server.tts_text import asr_garbage
+    assert asr_garbage("Субтитры создавал DimaTorzok")
+    assert asr_garbage("Продолжение следует...")
+    assert asr_garbage("   ")
+    assert not asr_garbage("Нова, привет, как дела?")

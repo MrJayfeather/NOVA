@@ -10,7 +10,7 @@ from typing import Awaitable, Callable
 from nova.server.models.base import ASRModel, NO_COMMENT, TTSModel, VisionLLM
 from nova.server.proactive import ProactiveEngine
 from nova.server.tts_text import (
-    drop_leading_sounds, normalize_for_tts, strip_markers,
+    asr_garbage, drop_leading_sounds, normalize_for_tts, strip_markers,
 )
 from nova.shared.protocol import (
     AudioChunk, AudioSegment, DetectorEvent, Frame, Hotkey,
@@ -63,6 +63,9 @@ class Session:
         elif isinstance(msg, AudioSegment):
             try:
                 text = await self._asr.transcribe(base64.b64decode(msg.pcm_b64), msg.sample_rate)
+                if asr_garbage(text):
+                    # виспер нагаллюцинировал на бормотании — пусть переспросит
+                    text = "(неразборчивое бормотание)"
                 frames = list(self._frames) if wants_screen(text) else []
                 reply = await self._llm.reply_to_user(text, frames, list(self._history))
             except Exception as exc:
