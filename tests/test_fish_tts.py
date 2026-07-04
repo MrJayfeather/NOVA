@@ -36,6 +36,8 @@ async def test_failed_sentence_skipped_not_fatal():
 
     tts = FishTTS.__new__(FishTTS)  # без сети и файлов
     tts._reference_id = "x"
+    tts._validator = None
+    tts._temperature = 0.5
     tts.sample_rate = 44100
     calls = []
 
