@@ -18,6 +18,7 @@ from faster_whisper import WhisperModel, decode_audio
 def main() -> None:
     src = Path(sys.argv[1] if len(sys.argv) > 1 else "/workspace/mita_raw")
     dst = Path(sys.argv[2] if len(sys.argv) > 2 else "/workspace/mita_data/mita")
+    rate = int(sys.argv[3]) if len(sys.argv) > 3 else 44100  # f5 хочет 24000
     dst.mkdir(parents=True, exist_ok=True)
 
     files = sorted(src.rglob("*.ogg")) + sorted(src.rglob("*.wav"))
@@ -26,19 +27,23 @@ def main() -> None:
 
     kept = skipped = 0
     for i, p in enumerate(files):
-        audio44 = decode_audio(str(p), sampling_rate=44100)
+        audio = decode_audio(str(p), sampling_rate=rate)
         audio16 = decode_audio(str(p), sampling_rate=16000)
         segments, _ = model.transcribe(audio16, language="ru", beam_size=5)
         text = " ".join(s.text.strip() for s in segments).strip()
         if len(text) < 2:
             skipped += 1
             continue
-        pcm = (np.clip(audio44, -1.0, 1.0) * 32767).astype("<i2")
+        # нормализация громкости: игровые клипы тихие (~-35дБ)
+        peak = float(np.abs(audio).max())
+        if peak > 0:
+            audio = audio * (0.7 / peak)
+        pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype("<i2")
         name = f"{i:04d}"
         with wave.open(str(dst / f"{name}.wav"), "wb") as w:
             w.setnchannels(1)
             w.setsampwidth(2)
-            w.setframerate(44100)
+            w.setframerate(rate)
             w.writeframes(pcm.tobytes())
         (dst / f"{name}.lab").write_text(text, encoding="utf-8")
         kept += 1
