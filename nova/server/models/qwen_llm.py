@@ -1,4 +1,5 @@
 import base64
+import os
 
 import httpx
 
@@ -64,7 +65,7 @@ class QwenVLM(VisionLLM):
             json={
                 "model": self._model,
                 "messages": messages,
-                "max_tokens": 110,
+                "max_tokens": int(os.environ.get("NOVA_MAX_TOKENS", "160")),
                 "temperature": 0.8,
                 # штрафы против самокопирования («целая палитра» шесть раз подряд)
                 "presence_penalty": 0.8,
