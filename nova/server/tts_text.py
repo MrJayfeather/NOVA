@@ -50,6 +50,24 @@ def asr_garbage(text: str) -> bool:
     """Похоже ли распознанное на галлюцинацию ASR, а не на речь."""
     return bool(_ASR_GARBAGE_RE.search(text)) or not text.strip()
 
+
+def _speech_key(s: str) -> list[str]:
+    return re.findall(r"[а-яa-z]+", s.lower().replace("ё", "е"))
+
+
+def speech_matches(expected: str, heard: str, threshold: float = 0.6) -> bool:
+    """Совпадает ли услышанное с ожидаемым (сверка синтеза против заскоков).
+
+    Порог мягкий: виспер слегка перевирает окончания, это норма; заскок же
+    роняет или коверкает целые слова и проваливает сверку с запасом.
+    """
+    import difflib
+
+    a, b = _speech_key(expected), _speech_key(heard)
+    if not a:
+        return True
+    return difflib.SequenceMatcher(None, a, b).ratio() >= threshold
+
 # символы -> слова (или пробел, если озвучивать нечего)
 _SYMBOLS = {
     "%": " процентов",

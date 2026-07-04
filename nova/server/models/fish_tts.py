@@ -60,9 +60,13 @@ class FishTTS(TTSModel):
     def __init__(self, url: str, reference_wav: Path | None = None,
                  reference_text: str = "", timeout: float = 120.0,
                  api_key: str = "", model: str = "", reference_id: str = "",
-                 temperature: float = 0.7, top_p: float = 0.7):
+                 temperature: float = 0.7, top_p: float = 0.7,
+                 validator=None):
         self._temperature = temperature
         self._top_p = top_p
+        # validator(text, pcm, rate) -> bool: страж от «робо-заскоков» —
+        # сверка синтеза с текстом; заскок корёжит слова и проваливает сверку
+        self._validator = validator
         self._url = url
         self._ref_audio = Path(reference_wav).read_bytes() if reference_wav else b""
         self._ref_text = reference_text
@@ -75,10 +79,12 @@ class FishTTS(TTSModel):
             self._headers["model"] = model
         self._client = httpx.AsyncClient(timeout=timeout)
 
-    async def _tts_call(self, sentence: str, attempts: int = 2) -> bytes:
+    async def _tts_call(self, sentence: str, attempts: int = 2,
+                        temperature: float | None = None) -> bytes:
         req = build_tts_request(sentence, self._ref_audio, self._ref_text,
                                 reference_id=self._reference_id,
-                                temperature=self._temperature, top_p=self._top_p)
+                                temperature=temperature or self._temperature,
+                                top_p=self._top_p)
         last: Exception | None = None
         for i in range(attempts):
             try:
@@ -107,11 +113,16 @@ class FishTTS(TTSModel):
 
         tasks = [asyncio.create_task(bounded(s)) for s in sentences]
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        for res in results:
+        for sentence, res in zip(sentences, results):
             try:
                 if isinstance(res, BaseException):
                     raise res
                 pcm, rate = wav_to_pcm(res)
+                if self._validator and not await self._validator(sentence, pcm, rate):
+                    # заскок: перегенерация чуть другим маршрутом
+                    print(f"[nova] fish-tts: сверка провалена, пересинтез: {sentence[:50]!r}")
+                    pcm, rate = wav_to_pcm(await self._tts_call(
+                        sentence, temperature=min(self._temperature + 0.15, 1.0)))
             except Exception as exc:
                 # пропускаем только это предложение — остальная реплика
                 # должна прозвучать

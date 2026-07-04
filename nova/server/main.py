@@ -33,8 +33,22 @@ def build_models(mock: bool, persona_prompt: str):
     mode = os.environ.get("NOVA_TTS", "xtts")
     if mode == "fishcloud" and os.environ.get("NOVA_FISH_KEY"):
         from nova.server.models.fish_tts import FishTTS
+        from nova.server.tts_text import speech_matches, strip_markers
+
+        async def _guard(sentence: str, pcm: bytes, rate: int) -> bool:
+            # СТТ-страж от робо-заскоков: сверяем синтез с текстом; при
+            # любой ошибке стража голос важнее — пропускаем как есть
+            if os.environ.get("NOVA_TTS_GUARD", "1") != "1":
+                return True
+            try:
+                heard = await asr.transcribe(pcm, rate)
+            except Exception as exc:
+                print(f"[nova] страж синтеза недоступен: {exc!r}")
+                return True
+            return speech_matches(strip_markers(sentence), heard)
 
         tts = FishTTS(
+            validator=_guard,
             url="https://api.fish.audio/v1/tts",
             api_key=os.environ["NOVA_FISH_KEY"],
             model=os.environ.get("NOVA_FISH_MODEL", "s2.1-pro-free"),

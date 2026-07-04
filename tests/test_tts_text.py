@@ -73,6 +73,20 @@ def test_mid_text_laugh_kept():
     assert drop_leading_sounds(s) == s
 
 
+def test_speech_matches_accepts_close():
+    from nova.server.tts_text import speech_matches
+    assert speech_matches("Привет, Джей! Как ты там?", "привет джей как ты там")
+    assert speech_matches("Всё хорошо.", "все хорошо")  # ё/е
+    assert speech_matches("", "что угодно")  # пустое ожидание — не сверяем
+
+
+def test_speech_matches_rejects_garbled():
+    from nova.server.tts_text import speech_matches
+    assert not speech_matches(
+        "Слушай, я тут подумала про твою игру и промахи.",
+        "слушай я тут бррвым жуна прл")
+
+
 def test_asr_garbage_detected():
     from nova.server.tts_text import asr_garbage
     assert asr_garbage("Субтитры создавал DimaTorzok")
