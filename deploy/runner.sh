@@ -22,9 +22,12 @@ if ! curl -s http://127.0.0.1:5000/v1/models > /dev/null \
    && ! pgrep -f '[v]llm serve' > /dev/null; then
   # 27B FP8 весит ~28ГБ; профиль-прогон мультимодалки жрёт активации сверх
   # бюджета — не задирать util и лимит картинок (OOM на старте)
+  # enforce-eager: профилирование cuda-графов у 27B-мультимодалки
+  # вылетает по памяти на 48ГБ; eager чуть медленнее, но стабильно
   nohup vllm serve "$NOVA_MODEL" \
     --host 127.0.0.1 --port 5000 --max-model-len 24576 \
     --gpu-memory-utilization 0.72 --limit-mm-per-prompt '{"image":6}' \
+    --enforce-eager \
     > /workspace/vllm.log 2>&1 &
 fi
 
