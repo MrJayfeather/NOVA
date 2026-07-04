@@ -2,7 +2,9 @@
 # Идемпотентный запуск сервисов NOVA. Вызывается из onstart.sh при старте
 # инстанса и вручную по ssh после git pull (перезапуск с новым кодом).
 set -x
-export $(tr '\0' '\n' < /proc/1/environ | grep -E '^(NOVA_MOCK|NOVA_TOKEN|NOVA_TTS|NOVA_FISH_CKPT|NOVA_FISH_KEY|NOVA_FISH_REF_ID|NOVA_FISH_TEMP|NOVA_FISH_TOP_P|NOVA_MODEL|VAST_API_KEY|VAST_CONTAINERLABEL|HF_TOKEN)=' | tr '\n' ' ')
+export $(tr '\0' '\n' < /proc/1/environ | grep -E '^(NOVA_MOCK|NOVA_TOKEN|NOVA_TTS|NOVA_FISH_CKPT|NOVA_FISH_KEY|NOVA_FISH_REF_ID|NOVA_FISH_TEMP|NOVA_FISH_TOP_P|NOVA_MODEL|NOVA_IDLE_LIMIT|VAST_API_KEY|VAST_CONTAINERLABEL|HF_TOKEN)=' | tr '\n' ' ')
+# файл-переопределение лимита простоя (сек) — удобно менять без пересоздания
+[ -f /workspace/idle_limit ] && export NOVA_IDLE_LIMIT=$(cat /workspace/idle_limit)
 export HF_HOME=/workspace/hf
 export COQUI_TOS_AGREED=1
 export NOVA_TTS=${NOVA_TTS:-fish}
