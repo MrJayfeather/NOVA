@@ -13,7 +13,8 @@ IDLE_LIMIT_S = float(os.environ.get("NOVA_IDLE_LIMIT", "900"))
 # тяжёлая GPU-работа без подключённых клиентов — тоже активность:
 # однажды вачдог усыпил инстанс посреди дообучения голоса
 BUSY_PATTERNS = ("fish_speech/train.py", "merge_lora", "extract_vq",
-                 "build_dataset", "finetune_prep")
+                 "build_dataset", "finetune_prep", "rvc_bench", "uv venv",
+                 "finetune_cli", "pip install")
 
 
 def should_stop(clients: int, idle_s: float, limit_s: float = IDLE_LIMIT_S) -> bool:
@@ -39,8 +40,13 @@ def main() -> None:
         print("[watchdog] нет VAST_API_KEY или id инстанса — автостоп выключен")
         return
     print(f"[watchdog] слежу за простоем инстанса {iid} (лимит {IDLE_LIMIT_S:.0f}с)")
+    started = time.time()
     while True:
         time.sleep(60)
+        # льготный период: не стрелять раньше лимита с СОБСТВЕННОГО старта —
+        # унаследованный многочасовой idle не повод для мгновенной казни
+        if time.time() - started < IDLE_LIMIT_S:
+            continue
         try:
             h = httpx.get("http://127.0.0.1:8000/health", timeout=5).json()
         except Exception:
