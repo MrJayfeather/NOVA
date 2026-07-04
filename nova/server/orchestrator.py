@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import os
 import time
 import uuid
 from collections import deque
@@ -95,9 +96,10 @@ class Session:
 
     async def _comment(self, event: str, reason: str) -> None:
         try:
-            # лимит vLLM на картинки в запросе — 6 (см. runner.sh)
+            # не больше лимита vLLM на картинки в запросе (см. runner.sh)
+            limit = int(os.environ.get("NOVA_IMG_LIMIT", "8"))
             comment = await self._llm.comment_on_event(
-                event, list(self._frames)[-6:], list(self._history)
+                event, list(self._frames)[-limit:], list(self._history)
             )
         except Exception as exc:
             print(f"[nova] ошибка модели (comment): {exc!r}")
