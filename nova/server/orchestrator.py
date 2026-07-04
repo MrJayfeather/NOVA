@@ -95,8 +95,9 @@ class Session:
 
     async def _comment(self, event: str, reason: str) -> None:
         try:
+            # лимит vLLM на картинки в запросе — 6 (см. runner.sh)
             comment = await self._llm.comment_on_event(
-                event, list(self._frames), list(self._history)
+                event, list(self._frames)[-6:], list(self._history)
             )
         except Exception as exc:
             print(f"[nova] ошибка модели (comment): {exc!r}")
