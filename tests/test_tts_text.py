@@ -1,4 +1,6 @@
-from nova.server.tts_text import normalize_for_tts, strip_markers
+from nova.server.tts_text import (
+    drop_leading_sounds, normalize_for_tts, strip_markers,
+)
 
 
 def test_integers_become_words():
@@ -54,3 +56,18 @@ def test_strip_markers_for_display():
 def test_marker_with_space_and_hyphen():
     out = normalize_for_tts("[soft tone] тише. [long-break] дальше")
     assert "[soft tone]" in out and "[long-break]" in out
+
+
+def test_leading_laugh_dropped():
+    assert drop_leading_sounds("[laughing] Ну конечно, с тобой.") == "Ну конечно, с тобой."
+    assert drop_leading_sounds("[chuckling] [sighing] Привет.") == "Привет."
+
+
+def test_leading_emotion_kept():
+    s = "[sarcastic] Ну ты гений."
+    assert drop_leading_sounds(s) == s
+
+
+def test_mid_text_laugh_kept():
+    s = "Ну ты дал. [laughing] Ладно, живи."
+    assert drop_leading_sounds(s) == s

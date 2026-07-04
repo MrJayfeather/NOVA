@@ -18,6 +18,24 @@ def strip_markers(text: str) -> str:
     """Текст для экрана/истории — без голосовых ремарок."""
     return re.sub(r"\s{2,}", " ", _MARKER_RE.sub("", text)).strip()
 
+
+# звуковые ремарки (не эмоции-инструкции): смешок «для разгона» в начале
+# реплики звучит как нервный тик — модель игнорирует правило в промпте,
+# поэтому вырезаем кодом
+_SOUND_TAGS = (
+    "laughing", "chuckling", "sobbing", "crying loudly", "sighing",
+    "groaning", "panting", "gasping", "yawning", "snoring",
+    "audience laughing", "background laughter", "crowd laughing",
+    "break", "long-break",
+)
+_LEADING_SOUNDS_RE = re.compile(
+    r"^\s*(?:\[(?:" + "|".join(re.escape(t) for t in _SOUND_TAGS) + r")\]\s*)+")
+
+
+def drop_leading_sounds(text: str) -> str:
+    """Убрать звуковые ремарки до первого слова; в середине/конце — можно."""
+    return _LEADING_SOUNDS_RE.sub("", text)
+
 # символы -> слова (или пробел, если озвучивать нечего)
 _SYMBOLS = {
     "%": " процентов",

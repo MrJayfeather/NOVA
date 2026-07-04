@@ -94,13 +94,17 @@ class FishTTS(TTSModel):
         raise last  # type: ignore[misc]
 
     async def synthesize(self, text: str) -> AsyncIterator[bytes]:
-        # все предложения уходят в синтез ПАРАЛЛЕЛЬНО (воспроизводим по
-        # порядку): при заторе облака ждём одну худшую задержку, а не сумму
+        # все предложения синтезируются ПАРАЛЛЕЛЬНО и отдаются одним
+        # потоком после готовности всех: чуть дольше до первого звука,
+        # зато без провалов посреди реплики при заторе облака
         sentences = split_for_tts(text)[:5]
         tasks = [asyncio.create_task(self._tts_call(s)) for s in sentences]
-        for task in tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for res in results:
             try:
-                pcm, rate = wav_to_pcm(await task)
+                if isinstance(res, BaseException):
+                    raise res
+                pcm, rate = wav_to_pcm(res)
             except Exception as exc:
                 # пропускаем только это предложение — остальная реплика
                 # должна прозвучать

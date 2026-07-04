@@ -9,7 +9,9 @@ from typing import Awaitable, Callable
 
 from nova.server.models.base import ASRModel, NO_COMMENT, TTSModel, VisionLLM
 from nova.server.proactive import ProactiveEngine
-from nova.server.tts_text import normalize_for_tts, strip_markers
+from nova.server.tts_text import (
+    drop_leading_sounds, normalize_for_tts, strip_markers,
+)
 from nova.shared.protocol import (
     AudioChunk, AudioSegment, DetectorEvent, Frame, Hotkey,
     SpeakEnd, SpeakStart,
@@ -111,6 +113,7 @@ class Session:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     async def _speak(self, text: str, reason: str, heard: str = "") -> None:
+        text = drop_leading_sounds(text)
         # на экран и в фидбек — чистый текст; голосовые ремарки только в TTS
         display = strip_markers(text)
         self._last_text = display
