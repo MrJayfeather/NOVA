@@ -25,7 +25,7 @@ def build_models(mock: bool, persona_prompt: str):
     llm = QwenVLM(
         persona_prompt=persona_prompt,
         base_url=os.environ.get("NOVA_VLLM_URL", "http://127.0.0.1:5000/v1"),
-        model=os.environ.get("NOVA_MODEL", "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8"),
+        model=os.environ.get("NOVA_MODEL", "Qwen/Qwen3.6-27B-FP8"),
     )
     persona = os.environ.get("NOVA_PERSONA", "nova")
     ref_dir = Path("personas") / persona

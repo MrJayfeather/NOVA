@@ -69,6 +69,8 @@ class QwenVLM(VisionLLM):
                 # штрафы против самокопирования («целая палитра» шесть раз подряд)
                 "presence_penalty": 0.8,
                 "frequency_penalty": 0.6,
+                # qwen3.5+: без «размышлений» — диалогу нужна скорость
+                "chat_template_kwargs": {"enable_thinking": False},
             },
         )
         r.raise_for_status()

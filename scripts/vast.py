@@ -16,7 +16,8 @@ import httpx
 API = "https://console.vast.ai/api/v0"
 API_V1 = "https://console.vast.ai/api/v1"  # инстансы переехали на v1
 LABEL = "nova"
-IMAGE = "vllm/vllm-openai:v0.11.0"
+# qwen3.6 требует vllm >= 0.19
+IMAGE = "vllm/vllm-openai:v0.19.0"
 DISK_GB = 80
 ROOT = Path(__file__).parent.parent
 

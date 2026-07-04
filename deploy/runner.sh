@@ -2,7 +2,7 @@
 # Идемпотентный запуск сервисов NOVA. Вызывается из onstart.sh при старте
 # инстанса и вручную по ssh после git pull (перезапуск с новым кодом).
 set -x
-export $(tr '\0' '\n' < /proc/1/environ | grep -E '^(NOVA_MOCK|NOVA_TOKEN|NOVA_TTS|NOVA_FISH_CKPT|VAST_API_KEY|VAST_CONTAINERLABEL|HF_TOKEN)=' | tr '\n' ' ')
+export $(tr '\0' '\n' < /proc/1/environ | grep -E '^(NOVA_MOCK|NOVA_TOKEN|NOVA_TTS|NOVA_FISH_CKPT|NOVA_MODEL|VAST_API_KEY|VAST_CONTAINERLABEL|HF_TOKEN)=' | tr '\n' ' ')
 export HF_HOME=/workspace/hf
 export COQUI_TOS_AGREED=1
 export NOVA_TTS=${NOVA_TTS:-fish}
@@ -17,11 +17,12 @@ cd /workspace/NOVA && git pull
 
 # мозг (vLLM) — если ещё не поднят (процесс тоже считается: во время
 # загрузки весов эндпоинт ещё молчит, второй запуск устроил бы конфликт)
+export NOVA_MODEL=${NOVA_MODEL:-Qwen/Qwen3.6-27B-FP8}
 if ! curl -s http://127.0.0.1:5000/v1/models > /dev/null \
    && ! pgrep -f '[v]llm serve' > /dev/null; then
-  nohup vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct-FP8 \
-    --host 127.0.0.1 --port 5000 --max-model-len 16384 \
-    --gpu-memory-utilization 0.75 --limit-mm-per-prompt '{"image":12}' \
+  nohup vllm serve "$NOVA_MODEL" \
+    --host 127.0.0.1 --port 5000 --max-model-len 32768 \
+    --gpu-memory-utilization 0.80 --limit-mm-per-prompt '{"image":12}' \
     > /workspace/vllm.log 2>&1 &
 fi
 
