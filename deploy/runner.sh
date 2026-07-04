@@ -20,9 +20,11 @@ cd /workspace/NOVA && git pull
 export NOVA_MODEL=${NOVA_MODEL:-Qwen/Qwen3.6-27B-FP8}
 if ! curl -s http://127.0.0.1:5000/v1/models > /dev/null \
    && ! pgrep -f '[v]llm serve' > /dev/null; then
+  # 27B FP8 весит ~28ГБ; профиль-прогон мультимодалки жрёт активации сверх
+  # бюджета — не задирать util и лимит картинок (OOM на старте)
   nohup vllm serve "$NOVA_MODEL" \
-    --host 127.0.0.1 --port 5000 --max-model-len 32768 \
-    --gpu-memory-utilization 0.80 --limit-mm-per-prompt '{"image":12}' \
+    --host 127.0.0.1 --port 5000 --max-model-len 24576 \
+    --gpu-memory-utilization 0.72 --limit-mm-per-prompt '{"image":6}' \
     > /workspace/vllm.log 2>&1 &
 fi
 
