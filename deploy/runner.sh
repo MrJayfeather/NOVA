@@ -24,9 +24,11 @@ if ! curl -s http://127.0.0.1:5000/v1/models > /dev/null \
   # бюджета — не задирать util и лимит картинок (OOM на старте)
   # enforce-eager: профилирование cuda-графов у 27B-мультимодалки
   # вылетает по памяти на 48ГБ; eager чуть медленнее, но стабильно
-  export NOVA_IMG_LIMIT=${NOVA_IMG_LIMIT:-8}
+  # qwen3.6 токенизирует кадры жирно (~4к/кадр в нативном разрешении):
+  # 6 кадров ~24к токенов — влезает в 32к вместе с текстом, 8 — нет
+  export NOVA_IMG_LIMIT=${NOVA_IMG_LIMIT:-6}
   nohup vllm serve "$NOVA_MODEL" \
-    --host 127.0.0.1 --port 5000 --max-model-len 24576 \
+    --host 127.0.0.1 --port 5000 --max-model-len 32768 \
     --gpu-memory-utilization 0.85 --limit-mm-per-prompt "{\"image\":$NOVA_IMG_LIMIT}" \
     --enforce-eager \
     > /workspace/vllm.log 2>&1 &

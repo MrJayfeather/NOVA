@@ -97,7 +97,7 @@ class Session:
     async def _comment(self, event: str, reason: str) -> None:
         try:
             # не больше лимита vLLM на картинки в запросе (см. runner.sh)
-            limit = int(os.environ.get("NOVA_IMG_LIMIT", "8"))
+            limit = int(os.environ.get("NOVA_IMG_LIMIT", "6"))
             comment = await self._llm.comment_on_event(
                 event, list(self._frames)[-limit:], list(self._history)
             )
