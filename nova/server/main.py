@@ -43,6 +43,10 @@ def build_models(mock: bool, persona_prompt: str):
             # затор free-очереди: лучше быстро пропустить предложение,
             # чем молчать минуту
             timeout=35.0,
+            # ниже температура — стабильнее голос (меньше «выпадений из
+            # роли»), живость добирается эмоциональными ремарками
+            temperature=float(os.environ.get("NOVA_FISH_TEMP", "0.5")),
+            top_p=float(os.environ.get("NOVA_FISH_TOP_P", "0.6")),
         )
     elif mode in ("fish", "fishcloud") and ref_txt.exists():
         if mode == "fishcloud":

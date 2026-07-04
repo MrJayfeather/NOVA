@@ -12,7 +12,8 @@ from nova.server.models.xtts_tts import split_for_tts
 
 
 def build_tts_request(text: str, ref_audio: bytes = b"", ref_text: str = "",
-                      reference_id: str = "") -> dict:
+                      reference_id: str = "", temperature: float = 0.7,
+                      top_p: float = 0.7) -> dict:
     req = {
         "text": text,
         "format": "wav",
@@ -22,8 +23,8 @@ def build_tts_request(text: str, ref_audio: bytes = b"", ref_text: str = "",
         # облачный fish.audio: готовая модель голоса по id;
         # температура ниже дефолтной 0.8 — ровнее подача, меньше глюков
         req["reference_id"] = reference_id
-        req["temperature"] = 0.7
-        req["top_p"] = 0.7
+        req["temperature"] = temperature
+        req["top_p"] = top_p
     else:
         req["references"] = [{"audio": ref_audio, "text": ref_text}]
         # сервер кэширует закодированный референс — без этого он
@@ -58,7 +59,10 @@ class FishTTS(TTSModel):
 
     def __init__(self, url: str, reference_wav: Path | None = None,
                  reference_text: str = "", timeout: float = 120.0,
-                 api_key: str = "", model: str = "", reference_id: str = ""):
+                 api_key: str = "", model: str = "", reference_id: str = "",
+                 temperature: float = 0.7, top_p: float = 0.7):
+        self._temperature = temperature
+        self._top_p = top_p
         self._url = url
         self._ref_audio = Path(reference_wav).read_bytes() if reference_wav else b""
         self._ref_text = reference_text
@@ -73,7 +77,8 @@ class FishTTS(TTSModel):
 
     async def _tts_call(self, sentence: str, attempts: int = 2) -> bytes:
         req = build_tts_request(sentence, self._ref_audio, self._ref_text,
-                                reference_id=self._reference_id)
+                                reference_id=self._reference_id,
+                                temperature=self._temperature, top_p=self._top_p)
         last: Exception | None = None
         for i in range(attempts):
             try:
