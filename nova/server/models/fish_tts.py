@@ -97,8 +97,15 @@ class FishTTS(TTSModel):
         # все предложения синтезируются ПАРАЛЛЕЛЬНО и отдаются одним
         # потоком после готовности всех: чуть дольше до первого звука,
         # зато без провалов посреди реплики при заторе облака
-        sentences = split_for_tts(text)[:12]
-        tasks = [asyncio.create_task(self._tts_call(s)) for s in sentences]
+        sentences = split_for_tts(text)[:20]
+        # free-тариф fish.audio: не больше 5 одновременных запросов
+        sem = asyncio.Semaphore(4)
+
+        async def bounded(s: str) -> bytes:
+            async with sem:
+                return await self._tts_call(s)
+
+        tasks = [asyncio.create_task(bounded(s)) for s in sentences]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for res in results:
             try:
