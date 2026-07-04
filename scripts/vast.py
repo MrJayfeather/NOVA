@@ -80,7 +80,8 @@ def my_instances(key: str) -> list[dict]:
     return [i for i in r.json().get("instances", []) if i.get("label") == LABEL]
 
 
-def create_instance(key: str, offer_id: int, token: str, hf_token: str = "") -> None:
+def create_instance(key: str, offer_id: int, token: str, env: dict | None = None) -> None:
+    env = env or {}
     # CRLF из windows-копии ломает bash на инстансе
     onstart = (ROOT / "deploy" / "onstart.sh").read_text(encoding="utf-8").replace("\r\n", "\n")
     body = {
@@ -95,9 +96,15 @@ def create_instance(key: str, offer_id: int, token: str, hf_token: str = "") -> 
             "NOVA_MOCK": "0",
             "NOVA_TOKEN": token,
             "VAST_API_KEY": key,
-            "HF_TOKEN": hf_token,
+            "HF_TOKEN": env.get("HF_TOKEN", ""),
             "HF_HOME": "/workspace/hf",
             "COQUI_TOS_AGREED": "1",
+            # голос: облако fish.audio первичен, локальный fish — запасной
+            "NOVA_TTS": env.get("NOVA_TTS", "fishcloud"),
+            "NOVA_FISH_KEY": env.get("NOVA_FISH_KEY", ""),
+            "NOVA_FISH_REF_ID": env.get("NOVA_FISH_REF_ID", ""),
+            "NOVA_FISH_TEMP": env.get("NOVA_FISH_TEMP", "0.5"),
+            "NOVA_FISH_TOP_P": env.get("NOVA_FISH_TOP_P", "0.6"),
         },
     }
     r = httpx.put(f"{API}/asks/{offer_id}/", headers=_headers(key), json=body, timeout=60)
@@ -172,7 +179,7 @@ def cmd_up(key: str, env_path: Path, env: dict, write_config: bool) -> None:
             print("[vast] нет подходящих карт — попробуй позже")
             sys.exit(1)
         print(f"[vast] арендую {offer['gpu_name']} за ${offer['dph_total']:.3f}/ч...")
-        create_instance(key, offer["id"], token, hf_token=env.get("HF_TOKEN", ""))
+        create_instance(key, offer["id"], token, env=env)
 
     print("[vast] жду запуска (первый старт с загрузкой моделей — 15–25 минут)...")
     while True:
