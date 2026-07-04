@@ -8,7 +8,7 @@ import time
 import httpx
 
 API = "https://console.vast.ai/api/v0"  # смена состояния инстанса — на v0
-IDLE_LIMIT_S = 900.0
+IDLE_LIMIT_S = float(os.environ.get("NOVA_IDLE_LIMIT", "900"))
 
 # тяжёлая GPU-работа без подключённых клиентов — тоже активность:
 # однажды вачдог усыпил инстанс посреди дообучения голоса
