@@ -39,6 +39,32 @@ if [ ! -d /workspace/fishenv ]; then
   /workspace/fishenv/bin/pip install -e /workspace/fish-speech "huggingface_hub[cli]" \
     -c /workspace/constraints.txt -i https://pypi.org/simple > /workspace/fishpip.log 2>&1
 fi
+# голос 3.0 (VoxCPM2) + сервер NOVA: venv поверх системных пакетов —
+# системный python не трогаем (в нём живёт vLLM и его зависимости)
+if [ ! -d /workspace/vox ]; then
+  python3 -m venv --system-site-packages /workspace/vox
+  /workspace/vox/bin/pip install voxcpm ruaccent -i https://pypi.org/simple \
+    > /workspace/voxpip.log 2>&1
+  /workspace/vox/bin/pip install -e /workspace/NOVA >> /workspace/voxpip.log 2>&1
+fi
+# веса VoxCPM2 — с повторами (сети хостов рвут долгие скачивания)
+cat > /workspace/dl_vox.py <<'PY'
+import time
+from huggingface_hub import snapshot_download
+for attempt in range(12):
+    try:
+        snapshot_download('openbmb/VoxCPM2')
+        print('VOX_DONE')
+        break
+    except Exception as e:
+        print(f'attempt {attempt}: {type(e).__name__}: {e}')
+        time.sleep(5)
+else:
+    raise SystemExit(1)
+PY
+HF_HOME=/workspace/hf /workspace/vox/bin/python /workspace/dl_vox.py \
+  > /workspace/voxdl.log 2>&1
+
 if [ ! -f /workspace/checkpoints/openaudio-s1-mini/codec.pth ]; then
   [ -f /workspace/hf_token ] && export HF_TOKEN=$(cat /workspace/hf_token)
   # через python-api (имя cli-команды меняется между версиями huggingface_hub);

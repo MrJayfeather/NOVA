@@ -55,3 +55,26 @@ def test_load_env(tmp_path):
     env = load_env(p)
     assert env["VAST_API_KEY"] == "abc"
     assert env["NOVA_TOKEN"] == "xyz"
+
+
+def test_create_env_passes_eyes_and_voice(monkeypatch):
+    import vast
+
+    sent = {}
+
+    def fake_put(url, headers=None, json=None, timeout=None):
+        sent.update(json["env"])
+
+        class R:
+            def raise_for_status(self):
+                pass
+
+        return R()
+
+    monkeypatch.setattr(vast.httpx, "put", fake_put)
+    vast.create_instance("key", 1, "token", env={
+        "GEMINI_KEY": "gk", "NOVA_TTS": "voxcpm", "HF_TOKEN": "hf",
+    })
+    assert sent["GEMINI_KEY"] == "gk"
+    assert sent["NOVA_EYES"] == "gemini"
+    assert sent["NOVA_TTS"] == "voxcpm"

@@ -2,7 +2,7 @@
 # Идемпотентный запуск сервисов NOVA. Вызывается из onstart.sh при старте
 # инстанса и вручную по ssh после git pull (перезапуск с новым кодом).
 set -x
-export $(tr '\0' '\n' < /proc/1/environ | grep -E '^(NOVA_MOCK|NOVA_TOKEN|NOVA_TTS|NOVA_FISH_CKPT|NOVA_FISH_KEY|NOVA_FISH_REF_ID|NOVA_FISH_TEMP|NOVA_FISH_TOP_P|NOVA_MODEL|NOVA_IDLE_LIMIT|VAST_API_KEY|VAST_CONTAINERLABEL|HF_TOKEN)=' | tr '\n' ' ')
+export $(tr '\0' '\n' < /proc/1/environ | grep -E '^(NOVA_MOCK|NOVA_TOKEN|NOVA_TTS|NOVA_FISH_CKPT|NOVA_FISH_KEY|NOVA_FISH_REF_ID|NOVA_FISH_TEMP|NOVA_FISH_TOP_P|NOVA_MODEL|NOVA_IDLE_LIMIT|NOVA_EYES|GEMINI_KEY|NOVA_GEMINI_MODEL|NOVA_VOX_TAG|NOVA_VOX_STRESS|NOVA_VOX_SEED|NOVA_GPU_UTIL|VAST_API_KEY|VAST_CONTAINERLABEL|HF_TOKEN)=' | tr '\n' ' ')
 # файл-переопределение лимита простоя (сек) — удобно менять без пересоздания
 [ -f /workspace/idle_limit ] && export NOVA_IDLE_LIMIT=$(cat /workspace/idle_limit)
 export HF_HOME=/workspace/hf
@@ -12,6 +12,8 @@ export NOVA_TTS=${NOVA_TTS:-fish}
 export NOVA_FISH_CKPT=${NOVA_FISH_CKPT:-/workspace/checkpoints/openaudio-s1-mini}
 # облачный fish.audio: ключ кладётся в /workspace/fish_key (не в git!)
 [ -f /workspace/fish_key ] && export NOVA_FISH_KEY=$(cat /workspace/fish_key)
+# облачные глаза: ключ кладётся в /workspace/gemini_key (не в git!)
+[ -f /workspace/gemini_key ] && export GEMINI_KEY=$(cat /workspace/gemini_key)
 [ -f /workspace/hf_token ] && export HF_TOKEN=$(cat /workspace/hf_token)
 export LD_LIBRARY_PATH="$(python3 -c 'import nvidia.cudnn; print(list(nvidia.cudnn.__path__)[0] + "/lib")'):$LD_LIBRARY_PATH"
 
@@ -28,10 +30,18 @@ if ! curl -s http://127.0.0.1:5000/v1/models > /dev/null \
   # вылетает по памяти на 48ГБ; eager чуть медленнее, но стабильно
   # qwen3.6 токенизирует кадры жирно (~4к/кадр в нативном разрешении):
   # 6 кадров ~24к токенов — влезает в 32к вместе с текстом, 8 — нет
+  # облачные глаза: кадры в мозг не ходят, KV-кэшу хватает 0.70 —
+  # высвобождаем ~7ГБ под VoxCPM2. Локальные глаза — прежние 0.85.
+  if [ "${NOVA_EYES:-gemini}" = "gemini" ] && [ -n "$GEMINI_KEY" ]; then
+    export NOVA_GPU_UTIL=${NOVA_GPU_UTIL:-0.70}
+  else
+    export NOVA_GPU_UTIL=${NOVA_GPU_UTIL:-0.85}
+  fi
   export NOVA_IMG_LIMIT=${NOVA_IMG_LIMIT:-6}
   nohup vllm serve "$NOVA_MODEL" \
     --host 127.0.0.1 --port 5000 --max-model-len 32768 \
-    --gpu-memory-utilization 0.85 --limit-mm-per-prompt "{\"image\":$NOVA_IMG_LIMIT}" \
+    --gpu-memory-utilization "$NOVA_GPU_UTIL" \
+    --limit-mm-per-prompt "{\"image\":$NOVA_IMG_LIMIT}" \
     --enforce-eager \
     > /workspace/vllm.log 2>&1 &
 fi
@@ -69,6 +79,9 @@ cd /workspace/NOVA
 pkill -f '[n]ova.server.main'
 pkill -f '[i]dle_watchdog'
 sleep 1
-nohup python3 -m nova.server.main > /workspace/nova.log 2>&1 &
+# сервер из vox-venv, если он есть (там voxcpm и ruaccent поверх системных)
+PYBIN=python3
+[ -x /workspace/vox/bin/python ] && PYBIN=/workspace/vox/bin/python
+nohup "$PYBIN" -m nova.server.main > /workspace/nova.log 2>&1 &
 nohup python3 deploy/idle_watchdog.py > /workspace/watchdog.log 2>&1 &
 echo RUNNER_OK

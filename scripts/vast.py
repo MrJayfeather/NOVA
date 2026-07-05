@@ -99,8 +99,11 @@ def create_instance(key: str, offer_id: int, token: str, env: dict | None = None
             "HF_TOKEN": env.get("HF_TOKEN", ""),
             "HF_HOME": "/workspace/hf",
             "COQUI_TOS_AGREED": "1",
-            # голос: облако fish.audio первичен, локальный fish — запасной
-            "NOVA_TTS": env.get("NOVA_TTS", "fishcloud"),
+            # голос: локальный VoxCPM2 первичен; откат — NOVA_TTS=fishcloud в .env
+            "NOVA_TTS": env.get("NOVA_TTS", "voxcpm"),
+            # глаза: облако Gemini первично; откат — NOVA_EYES=local в .env
+            "NOVA_EYES": env.get("NOVA_EYES", "gemini"),
+            "GEMINI_KEY": env.get("GEMINI_KEY", ""),
             "NOVA_FISH_KEY": env.get("NOVA_FISH_KEY", ""),
             "NOVA_FISH_REF_ID": env.get("NOVA_FISH_REF_ID", ""),
             "NOVA_FISH_TEMP": env.get("NOVA_FISH_TEMP", "0.5"),
