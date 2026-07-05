@@ -13,6 +13,8 @@ dependencies = [
     "opencv-python>=4.9",
     "sounddevice>=0.4.6",
     "dxcam>=0.0.5; sys_platform == 'win32'",
+    # системный звук в клипы (кино-режим): WASAPI loopback
+    "pyaudiowpatch>=0.2.12.5; sys_platform == 'win32'",
     "mss>=9",
     "pynput>=1.7",
     # 3.x собирает C-расширение локально (CMake) и не собирается на системном

@@ -320,6 +320,7 @@ dependencies = [
     { name = "numpy", version = "2.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "opencv-python" },
     { name = "ormsgpack" },
+    { name = "pyaudiowpatch", marker = "sys_platform == 'win32'" },
     { name = "pydantic" },
     { name = "pynput" },
     { name = "pysilero-vad" },
@@ -345,6 +346,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.26" },
     { name = "opencv-python", specifier = ">=4.9" },
     { name = "ormsgpack", specifier = ">=1.5" },
+    { name = "pyaudiowpatch", marker = "sys_platform == 'win32'", specifier = ">=0.2.12.5" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pynput", specifier = ">=1.7" },
     { name = "pysilero-vad", specifier = ">=2,<3" },
@@ -645,6 +647,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d8/bc/6d6c7ba8709c85f8f2c390b2b118d6fb08a783676a572271851bf45a7d22/protobuf-7.35.1-cp310-abi3-win32.whl", hash = "sha256:353652e4efd0bca5b5fc2656abf8307ef351f0cf938c9eba09f0e09c20a25c30", size = 428945, upload-time = "2026-06-11T21:55:37.034Z" },
     { url = "https://files.pythonhosted.org/packages/0a/19/8d0cb6f20a1ef7b18f1c8986ad5783f22f84cce39c6ce9a6e645ea55192e/protobuf-7.35.1-cp310-abi3-win_amd64.whl", hash = "sha256:230a75ddfc2de4806e56696ce9640c1cdfdb6543b7cfce98d42a4c0a0e7bdb87", size = 439996, upload-time = "2026-06-11T21:55:38.123Z" },
     { url = "https://files.pythonhosted.org/packages/19/c7/5f7c636ec43e0c545e28d1f1db71990108306f7bdcb89f069ba97e428e7f/protobuf-7.35.1-py3-none-any.whl", hash = "sha256:4bc97768d8fe4ad6743c8a19403e314511ed9f6d13205b687e52421c023ac1b9", size = 171659, upload-time = "2026-06-11T21:55:39.155Z" },
+]
+
+[[package]]
+name = "pyaudiowpatch"
+version = "0.2.12.8"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f8/a3/0bd930258c9b81f77ec52f1edfa5a8ed44c4d6079d1253c4fee5ed766863/pyaudiowpatch-0.2.12.8-cp311-cp311-win32.whl", hash = "sha256:13903f6a78abfd745fbae82c1edda95119fce179c6f2fc95e7849a54d537dce1", size = 96645, upload-time = "2026-01-14T18:19:26.217Z" },
+    { url = "https://files.pythonhosted.org/packages/55/df/88a94ca45c8b158b52888f5010cdad2f7998d5c4a44d0794fab97937f9ec/pyaudiowpatch-0.2.12.8-cp311-cp311-win_amd64.whl", hash = "sha256:8610948499efa12b01ec861408fcc95e7bc18c1dddf0abbfed6fd2305a898f63", size = 99097, upload-time = "2026-01-14T18:19:27.409Z" },
+    { url = "https://files.pythonhosted.org/packages/88/4e/ba7c938033fb25ba25f35e9f125f5c270e60c7789e65662d37424a5d9c0c/pyaudiowpatch-0.2.12.8-cp312-cp312-win32.whl", hash = "sha256:5c6f54cbee50ed3c971767cc8e85f45e94012aa3c4363b7cdd8541e9f9496d01", size = 96800, upload-time = "2026-01-14T18:19:29.01Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/e1/c25c239737386a3fd85354ce35a00fbe83e993a7e51d76791022850ca12c/pyaudiowpatch-0.2.12.8-cp312-cp312-win_amd64.whl", hash = "sha256:fd163a6531c4e4969925e687ef1bc57fae8ecc1a95de7ba707a436622552d7fa", size = 99319, upload-time = "2026-01-14T18:19:31.063Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/b9/62c83aea777521b0748f3ec6b4d0f8650af88d2a7fee03b98a6257f8ec32/pyaudiowpatch-0.2.12.8-cp313-cp313-win32.whl", hash = "sha256:d941c272ced5b1c6f1d054d47046ef50efcee954151c293c0102b410f549c3ab", size = 96801, upload-time = "2026-01-14T18:19:32.239Z" },
+    { url = "https://files.pythonhosted.org/packages/65/0f/aa9e6c6d331d2a027330e1275697ece6ace23c2209df8cd0f8c0e397ba1c/pyaudiowpatch-0.2.12.8-cp313-cp313-win_amd64.whl", hash = "sha256:3339e6430836a021e1a83ddb915a42eec0a8f198693855a8f32a57b4b97e0202", size = 99307, upload-time = "2026-01-14T18:19:33.706Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/cf/a2544222ca61b89b27beed06efc7d9f865216fd31d0da677921ef9fb3b9d/pyaudiowpatch-0.2.12.8-cp314-cp314-win32.whl", hash = "sha256:448b83316295ab4786b1844ea296d4848c75b93ada4df6f2150715520cf985a5", size = 98755, upload-time = "2026-01-14T18:19:34.923Z" },
+    { url = "https://files.pythonhosted.org/packages/12/61/1c9e515e45dfd86d25a1447ac7241436c8000c3ab142011c23fb1d3202ed/pyaudiowpatch-0.2.12.8-cp314-cp314-win_amd64.whl", hash = "sha256:df6e26032439d87cbbeb8f433e635652a36d54cdd14aa058188e21ba5c9a7df9", size = 100997, upload-time = "2026-01-14T18:19:36.188Z" },
 ]
 
 [[package]]
