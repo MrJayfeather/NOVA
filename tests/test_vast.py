@@ -74,7 +74,10 @@ def test_create_env_passes_eyes_and_voice(monkeypatch):
     monkeypatch.setattr(vast.httpx, "put", fake_put)
     vast.create_instance("key", 1, "token", env={
         "GEMINI_KEY": "gk", "NOVA_TTS": "voxcpm", "HF_TOKEN": "hf",
+        "NOVA_MEMORY_TOKEN": "mt",
     })
     assert sent["GEMINI_KEY"] == "gk"
     assert sent["NOVA_EYES"] == "gemini"
     assert sent["NOVA_TTS"] == "voxcpm"
+    assert sent["NOVA_MEMORY_TOKEN"] == "mt"
+    assert "nova-memory" in sent["NOVA_MEMORY_REPO"]

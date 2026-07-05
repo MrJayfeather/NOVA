@@ -2,7 +2,7 @@
 # Идемпотентный запуск сервисов NOVA. Вызывается из onstart.sh при старте
 # инстанса и вручную по ssh после git pull (перезапуск с новым кодом).
 set -x
-export $(tr '\0' '\n' < /proc/1/environ | grep -E '^(NOVA_MOCK|NOVA_TOKEN|NOVA_TTS|NOVA_FISH_CKPT|NOVA_FISH_KEY|NOVA_FISH_REF_ID|NOVA_FISH_TEMP|NOVA_FISH_TOP_P|NOVA_MODEL|NOVA_IDLE_LIMIT|NOVA_EYES|GEMINI_KEY|NOVA_GEMINI_MODEL|NOVA_VOX_TAG|NOVA_VOX_STRESS|NOVA_VOX_SEED|NOVA_GPU_UTIL|VAST_API_KEY|VAST_CONTAINERLABEL|HF_TOKEN)=' | tr '\n' ' ')
+export $(tr '\0' '\n' < /proc/1/environ | grep -E '^(NOVA_MOCK|NOVA_TOKEN|NOVA_TTS|NOVA_FISH_CKPT|NOVA_FISH_KEY|NOVA_FISH_REF_ID|NOVA_FISH_TEMP|NOVA_FISH_TOP_P|NOVA_MODEL|NOVA_IDLE_LIMIT|NOVA_EYES|GEMINI_KEY|NOVA_GEMINI_MODEL|NOVA_VOX_TAG|NOVA_VOX_STRESS|NOVA_VOX_SEED|NOVA_GPU_UTIL|NOVA_MEMORY|NOVA_MEMORY_DIR|NOVA_MEMORY_TOKEN|NOVA_MEMORY_REPO|NOVA_CHRONICLE_S|NOVA_CONDENSE_IDLE_S|NOVA_MEMORY_LLM|NOVA_RECALL_COOLDOWN_D|VAST_API_KEY|VAST_CONTAINERLABEL|HF_TOKEN)=' | tr '\n' ' ')
 # файл-переопределение лимита простоя (сек) — удобно менять без пересоздания
 [ -f /workspace/idle_limit ] && export NOVA_IDLE_LIMIT=$(cat /workspace/idle_limit)
 export HF_HOME=/workspace/hf
@@ -17,6 +17,9 @@ export NOVA_FISH_CKPT=${NOVA_FISH_CKPT:-/workspace/checkpoints/openaudio-s1-mini
 # env запечён при создании инстанса — файлы переопределяют без пересоздания
 [ -f /workspace/nova_tts ] && export NOVA_TTS=$(cat /workspace/nova_tts)
 [ -f /workspace/nova_eyes ] && export NOVA_EYES=$(cat /workspace/nova_eyes)
+[ -f /workspace/memory_token ] && export NOVA_MEMORY_TOKEN=$(cat /workspace/memory_token)
+# добор хвоста памяти при рестартах (основной пуш — из процесса сервера)
+git -C /workspace/nova-memory push origin HEAD:master 2>/dev/null
 [ -f /workspace/hf_token ] && export HF_TOKEN=$(cat /workspace/hf_token)
 export LD_LIBRARY_PATH="$(python3 -c 'import nvidia.cudnn; print(list(nvidia.cudnn.__path__)[0] + "/lib")'):$LD_LIBRARY_PATH"
 

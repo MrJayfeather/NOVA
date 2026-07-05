@@ -104,6 +104,11 @@ def create_instance(key: str, offer_id: int, token: str, env: dict | None = None
             # глаза: облако Gemini первично; откат — NOVA_EYES=local в .env
             "NOVA_EYES": env.get("NOVA_EYES", "gemini"),
             "GEMINI_KEY": env.get("GEMINI_KEY", ""),
+            # память: приватный репо переживает смерть бокса
+            "NOVA_MEMORY_TOKEN": env.get("NOVA_MEMORY_TOKEN", ""),
+            "NOVA_MEMORY_REPO": env.get(
+                "NOVA_MEMORY_REPO",
+                "github.com/MrJayfeather/nova-memory.git"),
             "NOVA_FISH_KEY": env.get("NOVA_FISH_KEY", ""),
             "NOVA_FISH_REF_ID": env.get("NOVA_FISH_REF_ID", ""),
             "NOVA_FISH_TEMP": env.get("NOVA_FISH_TEMP", "0.5"),

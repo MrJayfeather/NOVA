@@ -17,6 +17,16 @@ if [ ! -d NOVA ]; then
 fi
 cd NOVA && git pull
 
+# память NOVA: приватный репо, переживает смерть бокса
+if [ -n "$NOVA_MEMORY_TOKEN" ] && [ ! -d /workspace/nova-memory/.git ]; then
+  for i in 1 2 3; do
+    git clone "https://x-access-token:${NOVA_MEMORY_TOKEN}@${NOVA_MEMORY_REPO}" \
+      /workspace/nova-memory && break
+    echo "memory clone retry $i"; sleep 5
+  done
+fi
+mkdir -p /workspace/nova-memory
+
 pip install -e . faster-whisper coqui-tts "nvidia-cudnn-cu12>=9" \
   > /workspace/pip.log 2>&1
 
