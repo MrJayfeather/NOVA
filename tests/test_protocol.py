@@ -35,3 +35,27 @@ def test_server_messages_roundtrip():
 def test_unknown_type_rejected():
     with pytest.raises(ValidationError):
         parse_client_message('{"type": "hack"}')
+
+
+def test_clip_roundtrip():
+    from nova.shared.protocol import Clip, dump_message, parse_client_message
+
+    msg = Clip(ts=1.0, mp4_b64="QUJD", dur_s=15.0, audio=True)
+    back = parse_client_message(dump_message(msg))
+    assert isinstance(back, Clip)
+    assert back.dur_s == 15.0 and back.audio is True
+
+
+def test_cinema_mode_roundtrip():
+    from nova.shared.protocol import (
+        CinemaMode, dump_message, parse_server_message,
+    )
+
+    back = parse_server_message(dump_message(CinemaMode(on=True)))
+    assert isinstance(back, CinemaMode) and back.on is True
+
+
+def test_hotkey_cinema_allowed():
+    from nova.shared.protocol import Hotkey
+
+    assert Hotkey(action="cinema").action == "cinema"

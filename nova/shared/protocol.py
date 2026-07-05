@@ -38,9 +38,20 @@ class AudioSegment(BaseModel):
     source: str = "local_mic"
 
 
+class Clip(BaseModel):
+    """Видео-взгляд: клип экрана при движухе (кино-режим/экшн)."""
+
+    type: Literal["clip"] = "clip"
+    ts: float
+    mp4_b64: str
+    dur_s: float
+    audio: bool = False
+
+
 class Hotkey(BaseModel):
     type: Literal["hotkey"] = "hotkey"
-    action: Literal["comment_now", "toggle_pause", "feedback_up", "feedback_down"]
+    action: Literal["comment_now", "toggle_pause", "feedback_up",
+                    "feedback_down", "cinema"]
 
 
 class HelloAck(BaseModel):
@@ -70,12 +81,20 @@ class SpeakEnd(BaseModel):
     utterance_id: str
 
 
+class CinemaMode(BaseModel):
+    """Сервер -> клиент: включить/выключить принудительный кино-режим
+    (голосовая команда «смотрим фильм» ловится на сервере после ASR)."""
+
+    type: Literal["cinema_mode"] = "cinema_mode"
+    on: bool
+
+
 ClientMessage = Annotated[
-    Union[Hello, Frame, DetectorEvent, AudioSegment, Hotkey],
+    Union[Hello, Frame, DetectorEvent, AudioSegment, Hotkey, Clip],
     Field(discriminator="type"),
 ]
 ServerMessage = Annotated[
-    Union[HelloAck, SpeakStart, AudioChunk, SpeakEnd],
+    Union[HelloAck, SpeakStart, AudioChunk, SpeakEnd, CinemaMode],
     Field(discriminator="type"),
 ]
 
