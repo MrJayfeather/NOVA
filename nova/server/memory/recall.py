@@ -118,6 +118,47 @@ def extract_windows(day_text: str, keys: list[str], radius: int = 5,
     return "\n".join(out)
 
 
+def associate(store: MemoryStore, context_keys: list[str], today: str,
+              min_age_days: int = 3, cooldown_days: int = 5,
+              min_score: float = 4.0) -> str:
+    """Эффект Светки: текущий момент ассоциативно цепляет старый день.
+    Возвращает ПРЕДЛОЖЕНИЕ мозгу (не приказ) или «»."""
+    if not context_keys:
+        return ""
+    recalled_path = store.root / ".recalled"
+    recalled = recalled_path.read_text(encoding="utf-8").splitlines() \
+        if recalled_path.exists() else []
+    base = _d(today)
+    best: tuple[float, str] | None = None
+    for line in store.read_index().splitlines():
+        m = re.match(r"(\d{4}-\d{2}-\d{2})", line.strip())
+        if not m:
+            continue
+        day = m.group(1)
+        age = (base - _d(day)).days
+        if age < min_age_days:
+            continue  # свежее и так в конспекте — не «а помнишь»
+        if any(day in r and (base - _d(r[:10])).days < cooldown_days
+               for r in recalled):
+            continue  # бабушкина история — уже вспоминала недавно
+        hits = sum(1 for k in context_keys if _match(k, line))
+        if hits < 2:
+            continue
+        score = hits * 2 + (1.0 if "★" in line else 0) + min(age / 30, 2.0)
+        if score >= min_score and (best is None or score > best[0]):
+            best = (score, day)
+    if best is None:
+        return ""
+    day = best[1]
+    got = extract_windows(store.read_day(day), context_keys)
+    if not got:
+        return ""
+    with recalled_path.open("a", encoding="utf-8") as f:
+        f.write(f"{today} {day}\n")
+    return (f"[из дневника за {day} — если к месту, можешь сама это "
+            f"вспомнить, но не обязана:\n{got}]")
+
+
 def recall(store: MemoryStore, question: str, today: str) -> str:
     keys = keywords(question)
     period = parse_period(question, today)

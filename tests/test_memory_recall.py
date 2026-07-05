@@ -69,3 +69,48 @@ def test_recall_end_to_end(tmp_path):
 def test_recall_empty_when_nothing(tmp_path):
     st = MemoryStore(tmp_path)
     assert recall(st, "помнишь про козявок?", TODAY) == ""
+
+
+def _assoc_store(tmp_path):
+    import time
+    st = MemoryStore(tmp_path)
+    ts = time.mktime((2026, 3, 1, 20, 0, 0, 0, 0, -1))
+    st.append_seen("Игра X: NPC Барни ляпнул смешную фразу про сыр", ts=ts)
+    st.append_reply("Джей", "ахахах этот Барни", ts=ts + 5)
+    st.set_index_line("2026-03-01",
+                      "2026-03-01 ★: игра X, NPC Барни и сыр | сущности: X, Барни")
+    st.set_index_line("2026-07-04",
+                      "2026-07-04: вчера болтали | сущности: разное")
+    return st
+
+
+def test_associate_finds_old_bright_day(tmp_path):
+    from nova.server.memory.recall import associate
+
+    st = _assoc_store(tmp_path)
+    out = associate(st, ["барни", "игра"], TODAY)
+    assert "2026-03-01" in out
+    assert "если к месту" in out          # предложение, не приказ
+
+
+def test_associate_respects_cooldown(tmp_path):
+    from nova.server.memory.recall import associate
+
+    st = _assoc_store(tmp_path)
+    assert associate(st, ["барни", "игра"], TODAY)       # первый раз — нашла
+    assert associate(st, ["барни", "игра"], TODAY) == "" # повтор — молчим
+
+
+def test_associate_skips_recent_days(tmp_path):
+    from nova.server.memory.recall import associate
+
+    st = _assoc_store(tmp_path)
+    # вчерашний день не годится для «а помнишь» — слишком свежо
+    assert associate(st, ["болтали", "разное"], TODAY) == ""
+
+
+def test_associate_needs_strong_match(tmp_path):
+    from nova.server.memory.recall import associate
+
+    st = _assoc_store(tmp_path)
+    assert associate(st, ["случайное"], TODAY) == ""
