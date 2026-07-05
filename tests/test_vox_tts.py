@@ -21,24 +21,39 @@ def test_cut_spoken_head_cuts_before_first_word():
     rate = 100  # секунда = 100 сэмплов, удобно считать
     pcm = np.arange(500, dtype=np.int16)  # 5 «секунд»
     words = [("and", 0.5), ("speaking", 1.0), ("Слушай,", 3.0), ("я", 3.5)]
-    out = cut_spoken_head(pcm, rate, words, "Слушай", margin=0.12, fade=0.0)
+    out, cut = cut_spoken_head(pcm, rate, words, "Слушай", margin=0.12, fade=0.0)
     # срез на 3.0 - 0.12 = 2.88с -> сэмпл 288
+    assert abs(cut - 2.88) < 1e-9
     assert len(out) == 500 - 288
     assert out[0] == 288
+
+
+def test_cut_spoken_head_fuzzy_and_second_word():
+    # whisper слышит «Слушай» как «слушои» — нечёткое совпадение;
+    # или первое слово слилось с тегом — ловим по второму
+    rate = 100
+    pcm = np.arange(500, dtype=np.int16)
+    fuzzy = [("слушои", 2.0)]
+    out, cut = cut_spoken_head(pcm, rate, fuzzy, ["Слушай", "я"], margin=0.0)
+    assert cut == 2.0
+    second = [("тарабарщина", 1.0), ("я", 2.5)]
+    out, cut = cut_spoken_head(pcm, rate, second, ["Слушай", "я"], margin=0.0)
+    assert cut == 2.5
 
 
 def test_cut_spoken_head_fade_in():
     rate = 100
     pcm = np.full(500, 1000, dtype=np.int16)
     words = [("Слушай", 1.0)]
-    out = cut_spoken_head(pcm, rate, words, "Слушай", margin=0.0, fade=0.1)
+    out, cut = cut_spoken_head(pcm, rate, words, "Слушай", margin=0.0, fade=0.1)
     assert out[0] == 0            # начало фейда — тишина
     assert out[20] == 1000        # после 10 сэмплов фейда — полная громкость
 
 
 def test_cut_spoken_head_word_missing_returns_all():
     pcm = np.arange(100, dtype=np.int16)
-    out = cut_spoken_head(pcm, 100, [("другое", 0.1)], "Слушай")
+    out, cut = cut_spoken_head(pcm, 100, [("другое", 0.1)], "Слушай")
+    assert cut is None
     assert len(out) == 100
 
 
@@ -142,6 +157,19 @@ async def test_failed_sentence_skipped_not_fatal():
     tts._gen_sync = fake_gen
     chunks = [c async for c in tts.synthesize("Первое. Второе.")]
     assert len(chunks) == 1
+
+
+async def test_warmup_loads_and_generates_once():
+    gens = []
+    tts = make_vox(tag="(slow)")
+
+    def fake_gen(prepared, seed):
+        gens.append(prepared)
+        return np.full(10, 500, dtype=np.int16)
+
+    tts._gen_sync = fake_gen
+    await tts.warmup()
+    assert len(gens) == 1        # одна холостая генерация — модель горячая
 
 
 def test_build_vox_tts_reads_env(monkeypatch, tmp_path):

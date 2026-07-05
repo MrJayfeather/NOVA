@@ -99,6 +99,15 @@ def create_app(
     app.state.clients = 0
     app.state.last_activity = time.time()
 
+    @app.on_event("startup")
+    async def _warm_tts():
+        # VoxCPM2 грузится ~1.5 мин: греем на старте, а не в первой реплике
+        warm = getattr(tts, "warmup", None)
+        if warm:
+            import asyncio
+
+            asyncio.create_task(warm())
+
     @app.get("/health")
     def health():
         return {

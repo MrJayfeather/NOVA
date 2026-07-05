@@ -27,24 +27,41 @@ def norm_word(w: str) -> str:
 
 
 def cut_spoken_head(pcm: np.ndarray, rate: int,
-                    words: list[tuple[str, float]], first_word: str,
-                    margin: float = 0.12, fade: float = 0.02) -> np.ndarray:
-    """Модель наговаривает стилевой тег в начале — режем всё до первого
-    слова реплики. Запас margin, фейд-ин против дрожи на границе среза."""
-    target = norm_word(first_word)
+                    words: list[tuple[str, float]],
+                    first_words: list[str] | str,
+                    margin: float = 0.12, fade: float = 0.02,
+                    ) -> tuple[np.ndarray, float | None]:
+    """Модель наговаривает стилевой тег в начале — режем всё до начала
+    реплики. Whisper слышит первое слово не всегда точно («Слушай» →
+    «слушои»), поэтому сравнение нечёткое и по нескольким первым словам.
+    Возвращает (аудио, секунда среза | None)."""
+    import difflib
+
+    if isinstance(first_words, str):
+        first_words = [first_words]
+    targets = [t for t in (norm_word(w) for w in first_words) if t]
     start = None
     for w, t in words:
-        if norm_word(w) == target:
-            start = max(0.0, t - margin)
+        nw = norm_word(w)
+        if not nw:
+            continue
+        for target in targets:
+            # 0.65: «слушои»/«слушай» (две ослышки) проходит, английская
+            # тарабарщина тега (~0.3 к русским словам) — нет
+            if nw == target or difflib.SequenceMatcher(
+                    None, nw, target).ratio() >= 0.65:
+                start = max(0.0, t - margin)
+                break
+        if start is not None:
             break
     if start is None:
-        return pcm
+        return pcm, None
     out = pcm[int(start * rate):].copy()
     n = min(int(fade * rate), len(out))
     if n:
         ramp = np.linspace(0.0, 1.0, n, dtype=np.float32)
         out[:n] = (out[:n].astype(np.float32) * ramp).astype(np.int16)
-    return out
+    return out, start
 
 
 def normalize_peak(pcm: np.ndarray, target: int = 23000) -> np.ndarray:
@@ -114,10 +131,29 @@ class VoxTTS(TTSModel):
         pcm = await asyncio.to_thread(self._gen_sync, self.prepare(sentence), seed)
         if self._tag and self._timestamps:
             words = await self._timestamps(pcm.tobytes(), self.sample_rate)
-            first = strip_markers(sentence).split()
+            first = strip_markers(sentence).split()[:3]
             if first:
-                pcm = cut_spoken_head(pcm, self.sample_rate, words, first[0])
+                pcm, cut = cut_spoken_head(pcm, self.sample_rate, words, first)
+                if cut is None:
+                    # шапка не найдена — англ. хвост может прорваться в эфир,
+                    # пусть добивает страж; лог для разбора
+                    print(f"[nova] vox-tts: срез шапки НЕ найден: {sentence[:40]!r}")
+                else:
+                    print(f"[nova] vox-tts: срез {cut:.2f}с: {sentence[:40]!r}")
         return normalize_peak(pcm).tobytes()
+
+    async def warmup(self) -> None:
+        """VoxCPM2 грузится ~1.5 мин — греем при старте сервера, а не
+        посреди первой реплики пользователя."""
+        try:
+            async with self._lock:
+                if self._model is None:
+                    await asyncio.to_thread(self._load_sync)
+            await asyncio.to_thread(
+                self._gen_sync, self.prepare("Привет."), self._seed)
+            print("[nova] vox-tts: прогрет")
+        except Exception as exc:
+            print(f"[nova] vox-tts: прогрев не удался: {exc!r}")
 
     async def synthesize(self, text: str) -> AsyncIterator[bytes]:
         async with self._lock:
