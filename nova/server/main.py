@@ -17,35 +17,41 @@ from nova.shared.protocol import (
 def build_models(mock: bool, persona_prompt: str):
     if mock:
         return MockASR(), MockLLM(persona_prompt=persona_prompt), MockTTS()
+    from nova.server.models.gemini_vision import wrap_eyes
     from nova.server.models.qwen_llm import QwenVLM
     from nova.server.models.whisper_asr import WhisperASR
     from nova.server.models.xtts_tts import XttsTTS
+    from nova.server.tts_text import speech_matches, strip_markers
 
     asr = WhisperASR(model_name=os.environ.get("NOVA_WHISPER", "large-v3-turbo"))
-    llm = QwenVLM(
+    llm = wrap_eyes(QwenVLM(
         persona_prompt=persona_prompt,
         base_url=os.environ.get("NOVA_VLLM_URL", "http://127.0.0.1:5000/v1"),
         model=os.environ.get("NOVA_MODEL", "Qwen/Qwen3.6-27B-FP8"),
-    )
+    ))
     persona = os.environ.get("NOVA_PERSONA", "nova")
     ref_dir = Path("personas") / persona
     ref_txt = ref_dir / "voice_sample.txt"
     mode = os.environ.get("NOVA_TTS", "xtts")
-    if mode == "fishcloud" and os.environ.get("NOVA_FISH_KEY"):
-        from nova.server.models.fish_tts import FishTTS
-        from nova.server.tts_text import speech_matches, strip_markers
 
-        async def _guard(sentence: str, pcm: bytes, rate: int) -> bool:
-            # СТТ-страж от робо-заскоков: сверяем синтез с текстом; при
-            # любой ошибке стража голос важнее — пропускаем как есть
-            if os.environ.get("NOVA_TTS_GUARD", "1") != "1":
-                return True
-            try:
-                heard = await asr.transcribe(pcm, rate)
-            except Exception as exc:
-                print(f"[nova] страж синтеза недоступен: {exc!r}")
-                return True
-            return speech_matches(strip_markers(sentence), heard)
+    async def _guard(sentence: str, pcm: bytes, rate: int) -> bool:
+        # СТТ-страж от робо-заскоков: сверяем синтез с текстом; при
+        # любой ошибке стража голос важнее — пропускаем как есть
+        if os.environ.get("NOVA_TTS_GUARD", "1") != "1":
+            return True
+        try:
+            heard = await asr.transcribe(pcm, rate)
+        except Exception as exc:
+            print(f"[nova] страж синтеза недоступен: {exc!r}")
+            return True
+        return speech_matches(strip_markers(sentence), heard)
+
+    if mode == "voxcpm" and ref_txt.exists():
+        from nova.server.models.vox_tts import build_vox_tts
+
+        tts = build_vox_tts(asr, ref_dir, validator=_guard)
+    elif mode == "fishcloud" and os.environ.get("NOVA_FISH_KEY"):
+        from nova.server.models.fish_tts import FishTTS
 
         tts = FishTTS(
             validator=_guard,
@@ -62,9 +68,9 @@ def build_models(mock: bool, persona_prompt: str):
             temperature=float(os.environ.get("NOVA_FISH_TEMP", "0.5")),
             top_p=float(os.environ.get("NOVA_FISH_TOP_P", "0.6")),
         )
-    elif mode in ("fish", "fishcloud") and ref_txt.exists():
-        if mode == "fishcloud":
-            print("[nova] нет NOVA_FISH_KEY — облако недоступно, локальный fish")
+    elif mode in ("fish", "fishcloud", "voxcpm") and ref_txt.exists():
+        if mode != "fish":
+            print(f"[nova] {mode} недоступен — откатываюсь на локальный fish")
         from nova.server.models.fish_tts import FishTTS
 
         tts = FishTTS(
