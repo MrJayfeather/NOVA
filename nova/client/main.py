@@ -111,6 +111,10 @@ async def hotkey_loop(conn, player: Player, actions: asyncio.Queue, state: dict)
         else:
             if action == "comment_now":
                 state["last_event_ts"] = time.time()
+            if action == "feedback_up":
+                print("[nova] фидбек: 👍 записан (за последнюю её реплику)")
+            elif action == "feedback_down":
+                print("[nova] фидбек: 👎 записан (за последнюю её реплику)")
             conn.send(Hotkey(action=action_map.get(action, action)))
 
 
