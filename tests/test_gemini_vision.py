@@ -80,16 +80,22 @@ async def test_reply_describe_targets_question():
     inner = FakeInner()
     eyes = make_eyes(inner)
     prompts = []
+    sent_frames = []
 
     async def fake_call(frames, prompt):
         prompts.append(prompt)
+        sent_frames.append(frames)
         return "в правом углу дата 5 июля"
 
     eyes._call_gemini = fake_call
-    await eyes.reply_to_user("какая дата?", [b"jpeg1"], [])
+    await eyes.reply_to_user("какая дата?", [b"old", b"fresh"], [])
     assert "какая дата?" in prompts[0]        # вопрос уехал в промпт глаз
+    # только СВЕЖАЙШИЙ кадр: старый рядом путает при противоречивых фактах
+    assert sent_frames[0] == [b"fresh"]
+    # вставка мозгу помечена «СЕЙЧАС» — против инерции прошлых ответов
+    assert "СЕЙЧАС" in inner.calls[0][1]
     # прицельное описание мимо кэша: тот же кадр, другой вопрос — новый вызов
-    await eyes.reply_to_user("который час?", [b"jpeg1"], [])
+    await eyes.reply_to_user("который час?", [b"old", b"fresh"], [])
     assert "который час?" in prompts[1]
 
 
