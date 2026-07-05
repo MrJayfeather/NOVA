@@ -64,6 +64,36 @@ def cut_spoken_head(pcm: np.ndarray, rate: int,
     return out, start
 
 
+class HeadCutMiss(Exception):
+    """Наговоренная шапка не найдена — предложение нельзя выпускать в эфир."""
+
+
+def find_silence_cut(pcm: np.ndarray, rate: int, search_s: float = 6.0,
+                     min_gap_s: float = 0.25, margin: float = 0.05,
+                     ) -> float | None:
+    """Запасной срез: после шапки модель делает паузу перед репликой —
+    ищем самый длинный тихий провал в начале аудио и режем по его концу."""
+    n = min(len(pcm), int(search_s * rate))
+    if n < rate // 2:
+        return None
+    win = max(1, int(0.03 * rate))
+    head = np.abs(pcm[:n].astype(np.float32))
+    peak = float(head.max())
+    if peak <= 0:
+        return None
+    # огибающая по окнам 30мс: тихо = ниже 5% пика
+    frames = head[: (n // win) * win].reshape(-1, win).max(axis=1)
+    quiet = frames < 0.05 * peak
+    best_len, best_end, run = 0, None, 0
+    for i, q in enumerate(quiet):
+        run = run + 1 if q else 0
+        if run > best_len:
+            best_len, best_end = run, i + 1
+    if best_len * win < min_gap_s * rate or best_end is None:
+        return None
+    return max(0.0, best_end * win / rate - margin)
+
+
 def normalize_peak(pcm: np.ndarray, target: int = 23000) -> np.ndarray:
     """Пик к ~70% шкалы — как у остальных движков (см. fish_tts)."""
     peak = float(np.abs(pcm).max()) if len(pcm) else 0.0
@@ -135,9 +165,13 @@ class VoxTTS(TTSModel):
             if first:
                 pcm, cut = cut_spoken_head(pcm, self.sample_rate, words, first)
                 if cut is None:
-                    # шапка не найдена — англ. хвост может прорваться в эфир,
-                    # пусть добивает страж; лог для разбора
-                    print(f"[nova] vox-tts: срез шапки НЕ найден: {sentence[:40]!r}")
+                    # по словам не нашли — запасной срез по паузе после шапки
+                    cut = find_silence_cut(pcm, self.sample_rate)
+                    if cut is None:
+                        # английская шапка НЕ выходит в эфир никогда
+                        raise HeadCutMiss(sentence[:40])
+                    pcm = pcm[int(cut * self.sample_rate):]
+                    print(f"[nova] vox-tts: срез по паузе {cut:.2f}с: {sentence[:40]!r}")
                 else:
                     print(f"[nova] vox-tts: срез {cut:.2f}с: {sentence[:40]!r}")
         return normalize_peak(pcm).tobytes()
@@ -162,7 +196,12 @@ class VoxTTS(TTSModel):
         # одна GPU-модель — последовательно (в отличие от облака fish)
         for sentence in split_for_tts(strip_markers(text))[:20]:
             try:
-                pcm = await self._sentence_pcm(sentence, self._seed)
+                try:
+                    pcm = await self._sentence_pcm(sentence, self._seed)
+                except HeadCutMiss:
+                    # другой seed — другая генерация, шапка обычно находится
+                    print(f"[nova] vox-tts: шапка не найдена, пересинтез: {sentence[:50]!r}")
+                    pcm = await self._sentence_pcm(sentence, self._seed + 1)
                 if self._validator and not await self._validator(
                         sentence, pcm, self.sample_rate):
                     # заскок детерминирован по (текст, seed): тот же seed

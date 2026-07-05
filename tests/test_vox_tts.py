@@ -108,7 +108,7 @@ async def test_synthesize_sequential_cut_and_normalize():
     calls = []
 
     async def stamps(pcm, rate):
-        return [("tag", 0.1), ("Привет", 1.0)]
+        return [("tag", 0.1), ("Привет", 1.0), ("Как", 1.0)]
 
     tts = make_vox(word_timestamps=stamps, tag="(slow)")
 
@@ -157,6 +157,55 @@ async def test_failed_sentence_skipped_not_fatal():
     tts._gen_sync = fake_gen
     chunks = [c async for c in tts.synthesize("Первое. Второе.")]
     assert len(chunks) == 1
+
+
+def test_find_silence_cut_finds_gap():
+    from nova.server.models.vox_tts import find_silence_cut
+
+    rate = 1000
+    loud = np.full(2000, 10000, dtype=np.int16)   # 2с речи (шапка)
+    gap = np.zeros(400, dtype=np.int16)           # 0.4с паузы
+    tail = np.full(3000, 10000, dtype=np.int16)   # реплика
+    pcm = np.concatenate([loud, gap, tail])
+    cut = find_silence_cut(pcm, rate)
+    # конец паузы ~2.4с минус запас 0.05
+    assert cut is not None
+    assert abs(cut - 2.35) < 0.1
+
+
+def test_find_silence_cut_none_when_no_gap():
+    from nova.server.models.vox_tts import find_silence_cut
+
+    pcm = np.full(5000, 10000, dtype=np.int16)    # сплошная речь
+    assert find_silence_cut(pcm, 1000) is None
+
+
+async def test_head_miss_falls_back_to_silence_then_skip():
+    from nova.server.models.vox_tts import HeadCutMiss  # noqa: F401
+
+    async def stamps(pcm, rate):
+        return [("тарабарщина", 0.5)]              # слова реплики не найдены
+
+    tts = make_vox(word_timestamps=stamps, tag="(slow)")
+    rate = tts.sample_rate                         # 100
+
+    # аудио с паузой: шапка 1с, пауза 0.5с, реплика 2с
+    with_gap = np.concatenate([
+        np.full(100, 9000, dtype=np.int16),
+        np.zeros(50, dtype=np.int16),
+        np.full(200, 9000, dtype=np.int16),
+    ])
+    tts._gen_sync = lambda prepared, seed: with_gap
+    chunks = [c async for c in tts.synthesize("Привет.")]
+    assert len(chunks) == 1
+    # срезано по паузе: осталась только реплика (~2с и чуть паузы)
+    assert len(np.frombuffer(chunks[0], dtype=np.int16)) < 260
+
+    # без паузы и без совпадения слов — предложение пропускается целиком
+    tts2 = make_vox(word_timestamps=stamps, tag="(slow)")
+    tts2._gen_sync = lambda prepared, seed: np.full(400, 9000, dtype=np.int16)
+    chunks2 = [c async for c in tts2.synthesize("Привет.")]
+    assert chunks2 == []                           # тишина лучше английского
 
 
 async def test_warmup_loads_and_generates_once():
