@@ -27,10 +27,12 @@ class LatestSlot:
 
 
 class Connection:
-    def __init__(self, url: str, on_message: Callable, hello: Hello):
+    def __init__(self, url: str, on_message: Callable, hello: Hello,
+                 on_disconnect: Callable | None = None):
         self._url = url
         self._on_message = on_message
         self._hello = hello
+        self._on_disconnect = on_disconnect
         self._out: asyncio.Queue = asyncio.Queue()
         self._frames = LatestSlot()
 
@@ -57,6 +59,10 @@ class Connection:
                         self._pump_queue(ws), self._pump_frames(ws), self._pump_in(ws)
                     )
             except (OSError, websockets.WebSocketException) as exc:
+                # обрыв посреди её реплики теряет SpeakEnd: даём клиенту
+                # сбросить зависшие флаги (иначе микрофон глохнет навсегда)
+                if self._on_disconnect:
+                    self._on_disconnect()
                 delay = next(delays)
                 print(f"[nova] соединение потеряно ({exc!r}), повтор через {delay:.0f}с")
                 await asyncio.sleep(delay)

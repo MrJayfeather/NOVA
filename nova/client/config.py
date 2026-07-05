@@ -21,6 +21,9 @@ class ClientConfig(BaseModel):
     periodic_fps: float = 1.0
     burst_frames: int = 6
     jpeg_quality: int = 85
+    # минимум секунд между событиями детектора: видео на экране иначе
+    # устраивает шторм кадров (обрывы keepalive, очередь реплик)
+    event_cooldown_s: float = 4.0
     hotkeys: dict[str, str] = DEFAULT_HOTKEYS
 
 

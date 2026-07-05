@@ -22,6 +22,7 @@ async def capture_loop(source, detector, burst, conn, cfg: ClientConfig,
                        state: dict | None = None):
     period = 1.0 / cfg.periodic_fps
     last_periodic = 0.0
+    last_event = 0.0
     i = 0
     while iterations is None or i < iterations:
         i += 1
@@ -35,7 +36,8 @@ async def capture_loop(source, detector, burst, conn, cfg: ClientConfig,
             # а не последнее событие детектора)
             state["last_frame"] = (ts, jpeg, cursor_x, cursor_y)
         event = detector.process(gray_small, ts)
-        if event and not burst.active:
+        if event and not burst.active and ts - last_event >= cfg.event_cooldown_s:
+            last_event = ts
             conn.send(DetectorEvent(ts=ts, event=event))
             burst.start()
         if burst.active:
@@ -140,10 +142,16 @@ async def amain() -> None:
     state: dict = {}
     metrics = Metrics(Path("data/metrics.jsonl"))
     player = Player(SounddeviceStreamSink())
+    def on_disconnect():
+        # обрыв мог съесть SpeakEnd — размораживаем микрофон
+        state["speaking"] = False
+        state["deaf_until"] = 0.0
+
     conn = Connection(
         cfg.server_url,
         on_message=make_on_message(player, metrics, state),
         hello=Hello(profile=cfg.profile, persona=cfg.persona, token=cfg.token),
+        on_disconnect=on_disconnect,
     )
     detector = FrameDetector(
         motion_threshold=profile.detector.motion_threshold,

@@ -94,6 +94,53 @@ async def test_audio_sends_fresh_frame_before_speech():
     assert speech, "реплика не отправлена"
 
 
+async def test_event_cooldown_limits_detector_storm():
+    # видео = смена сцены каждый кадр; кулдаун держит один всплеск
+    class StormSource:
+        def __init__(self):
+            self.i = 0
+
+        def get(self):
+            self.i += 1
+            if self.i > 8:
+                return None
+            value = 0 if self.i % 2 else 255   # мигаем чёрное/белое
+            gray = np.full((90, 160), value, dtype=np.uint8)
+            return (time.time(), b"jpg", gray, (0, 0))
+
+    cfg = ClientConfig(server_url="ws://x", periodic_fps=0.001,
+                       burst_frames=1, event_cooldown_s=999.0)
+    conn = FakeConn()
+    await capture_loop(
+        source=StormSource(),
+        detector=FrameDetector(motion_threshold=12.0, scene_threshold=40.0),
+        burst=BurstCollector(size=1),
+        conn=conn,
+        cfg=cfg,
+        iterations=9,
+    )
+    events = [m for m in conn.sent if isinstance(m, DetectorEvent)]
+    assert len(events) == 1        # шторм ужат до одного события
+
+
+def test_disconnect_resets_speaking_flag():
+    from nova.client.connection import Connection
+    from nova.shared.protocol import Hello
+
+    state = {"speaking": True, "deaf_until": time.time() + 99}
+
+    def on_disconnect():
+        state["speaking"] = False
+        state["deaf_until"] = 0.0
+
+    conn = Connection("ws://x", on_message=lambda m: None,
+                      hello=Hello(profile="p", persona="n", token=""),
+                      on_disconnect=on_disconnect)
+    conn._on_disconnect()           # как в except-ветке run()
+    assert state["speaking"] is False
+    assert state["deaf_until"] == 0.0
+
+
 def test_to_pynput_combo():
     assert to_pynput_combo("ctrl+alt+m") == "<ctrl>+<alt>+m"
     assert to_pynput_combo("ctrl+alt+up") == "<ctrl>+<alt>+<up>"

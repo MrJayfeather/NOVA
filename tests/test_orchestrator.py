@@ -168,6 +168,11 @@ def test_wants_screen_detects_screen_questions():
     assert wants_screen("что это за приложение?")
     assert wants_screen("Посмотри на экран!")
     assert wants_screen("что тут происходит")
+    # системные «про сейчас»: без кадра мозг сочинял дату из головы
+    assert wants_screen("какая дата у меня сейчас на компе?")
+    assert wants_screen("какая раскладка клавиатуры включена?")
+    assert wants_screen("сколько времени?")
+    assert wants_screen("глянь в трей")
     assert not wants_screen("Нова, как у тебя дела?")
     assert not wants_screen("расскажи что-нибудь интересное")
 
