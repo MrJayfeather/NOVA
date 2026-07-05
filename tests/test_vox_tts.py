@@ -85,6 +85,8 @@ def make_vox(**kw):
     tts._timestamps = kw.get("word_timestamps")
     tts._check_speech = kw.get("check_speech", False)
     tts._pause_factor = kw.get("pause_factor", 0.0)
+    tts._use_dfn = False
+    tts._dfn = kw.get("dfn")
     tts._model = object()   # «загружена»
     tts._accents = kw.get("accents")
     tts.sample_rate = 100
@@ -236,6 +238,21 @@ def test_stretch_pauses_noop_when_off():
 
     pcm = np.full(100, 5000, dtype=np.int16)
     assert len(stretch_pauses(pcm, 100, factor=1.0)) == 100
+
+
+async def test_dfn_polish_applied_when_loaded():
+    called = []
+
+    def fake_dfn(arr):
+        called.append(len(arr))
+        return arr
+
+    tts = make_vox(tag="", dfn=fake_dfn)
+    tts.sample_rate = 48000
+    tts._gen_sync = lambda prepared, seed: np.full(100, 500, dtype=np.int16)
+    chunks = [c async for c in tts.synthesize("Привет.")]
+    assert called == [100]           # полировка прошла по каждому предложению
+    assert len(chunks) == 1
 
 
 def test_build_vox_tts_prefers_vox_reference(monkeypatch, tmp_path):

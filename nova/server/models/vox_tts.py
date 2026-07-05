@@ -117,6 +117,33 @@ def normalize_peak(pcm: np.ndarray, target: int = 23000) -> np.ndarray:
     return pcm
 
 
+def _load_dfn():
+    """DeepFilterNet-полировка выхода. df 0.5.6 импортирует выпиленный
+    torchaudio.backend — подсовываем шим до импорта."""
+    import sys
+    import types
+
+    import torchaudio
+
+    shim = types.ModuleType("torchaudio.backend.common")
+    shim.AudioMetaData = getattr(torchaudio, "AudioMetaData", object)
+    backend = types.ModuleType("torchaudio.backend")
+    backend.common = shim
+    sys.modules.setdefault("torchaudio.backend", backend)
+    sys.modules["torchaudio.backend.common"] = shim
+
+    import torch
+    from df.enhance import enhance, init_df
+
+    model, state, _ = init_df()
+
+    def run(arr: np.ndarray) -> np.ndarray:  # float32 [-1..1], 48кГц
+        t = torch.from_numpy(arr).unsqueeze(0)
+        return enhance(model, state, t).squeeze(0).numpy()
+
+    return run
+
+
 def stretch_pauses(pcm: np.ndarray, rate: int, factor: float = 2.0,
                    min_gap_s: float = 0.12) -> np.ndarray:
     """Замедление без артефактов: удлиняем ТОЛЬКО тишину между словами,
@@ -155,7 +182,7 @@ class VoxTTS(TTSModel):
     def __init__(self, reference_wav: Path, reference_text: str,
                  tag: str = DEFAULT_TAG, stress: bool = True, seed: int = 42,
                  word_timestamps=None, check_speech: bool = True,
-                 pause_factor: float = 2.0):
+                 pause_factor: float = 2.0, use_dfn: bool = True):
         # word_timestamps(pcm, rate) -> [(слово, старт_с)] — один прогон
         # whisper на предложение: и срез шапки, и СТТ-страж по нему же
         self._ref_wav = str(reference_wav)
@@ -166,6 +193,8 @@ class VoxTTS(TTSModel):
         self._timestamps = word_timestamps
         self._check_speech = check_speech
         self._pause_factor = pause_factor
+        self._use_dfn = use_dfn
+        self._dfn = None
         self._model = None
         self._accents = None
         self._lock = asyncio.Lock()
@@ -187,6 +216,12 @@ class VoxTTS(TTSModel):
             except Exception as exc:
                 # голос важнее ударений: страховка stress0
                 print(f"[nova] RUAccent не поднялся, ударения выключены: {exc!r}")
+        if self._use_dfn:
+            try:
+                self._dfn = _load_dfn()
+            except Exception as exc:
+                # голос важнее полировки
+                print(f"[nova] DFN не поднялся, полировка выключена: {exc!r}")
 
     def prepare(self, sentence: str) -> str:
         s = strip_markers(sentence)
@@ -231,6 +266,10 @@ class VoxTTS(TTSModel):
                 pcm, cut = trimmed, found
         if self._pause_factor > 1.0:
             pcm = stretch_pauses(pcm, self.sample_rate, self._pause_factor)
+        if self._dfn is not None and self.sample_rate == 48000:
+            f = pcm.astype(np.float32) / 32768.0
+            f = await asyncio.to_thread(self._dfn, f)
+            pcm = (f * 32767.0).clip(-32768, 32767).astype(np.int16)
         out = normalize_peak(pcm).tobytes()
         if self._check_speech and need_whisper:
             # страж по ТОМУ ЖЕ прогону whisper: слова после среза
@@ -300,4 +339,5 @@ def build_vox_tts(asr, ref_dir: Path) -> VoxTTS:
         word_timestamps=asr.word_timestamps,
         check_speech=os.environ.get("NOVA_TTS_GUARD", "1") == "1",
         pause_factor=float(os.environ.get("NOVA_VOX_PAUSES", "2.0")),
+        use_dfn=os.environ.get("NOVA_VOX_DFN", "1") == "1",
     )

@@ -47,6 +47,14 @@ if [ ! -d /workspace/vox ]; then
     > /workspace/voxpip.log 2>&1
   /workspace/vox/bin/pip install -e /workspace/NOVA >> /workspace/voxpip.log 2>&1
 fi
+# DFN-полировка выхода: колёс под py3.12 нет — собирается через Rust
+if ! /workspace/vox/bin/python -c 'import df' 2>/dev/null; then
+  curl -sSf https://sh.rustup.rs | sh -s -- -y -q > /workspace/rust.log 2>&1
+  source "$HOME/.cargo/env"
+  /workspace/vox/bin/pip install deepfilternet -i https://pypi.org/simple \
+    >> /workspace/voxpip.log 2>&1
+fi
+
 # веса VoxCPM2 — с повторами (сети хостов рвут долгие скачивания)
 cat > /workspace/dl_vox.py <<'PY'
 import time
