@@ -49,7 +49,8 @@ def build_models(mock: bool, persona_prompt: str):
     if mode == "voxcpm" and ref_txt.exists():
         from nova.server.models.vox_tts import build_vox_tts
 
-        tts = build_vox_tts(asr, ref_dir, validator=_guard)
+        # страж у voxcpm внутренний (тот же прогон whisper, что и срез)
+        tts = build_vox_tts(asr, ref_dir)
     elif mode == "fishcloud" and os.environ.get("NOVA_FISH_KEY"):
         from nova.server.models.fish_tts import FishTTS
 

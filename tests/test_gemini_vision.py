@@ -76,6 +76,23 @@ async def test_no_frames_reply_passthrough():
     assert inner.calls[0][1] == "привет"     # без вставки [экран: ]
 
 
+async def test_reply_describe_targets_question():
+    inner = FakeInner()
+    eyes = make_eyes(inner)
+    prompts = []
+
+    async def fake_call(frames, prompt):
+        prompts.append(prompt)
+        return "в правом углу дата 5 июля"
+
+    eyes._call_gemini = fake_call
+    await eyes.reply_to_user("какая дата?", [b"jpeg1"], [])
+    assert "какая дата?" in prompts[0]        # вопрос уехал в промпт глаз
+    # прицельное описание мимо кэша: тот же кадр, другой вопрос — новый вызов
+    await eyes.reply_to_user("который час?", [b"jpeg1"], [])
+    assert "который час?" in prompts[1]
+
+
 def test_wrap_eyes_modes():
     inner = FakeInner()
     assert wrap_eyes(inner, {}) is inner                      # нет ключа

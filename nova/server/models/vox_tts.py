@@ -8,7 +8,7 @@ import numpy as np
 
 from nova.server.models.base import TTSModel
 from nova.server.models.xtts_tts import split_for_tts
-from nova.server.tts_text import strip_markers
+from nova.server.tts_text import speech_matches, strip_markers
 
 # рецепт-чемпион (отслушан 05.07): темп «slower»; без very — «летит»
 DEFAULT_TAG = "(Speaking very slowly, at a calm and relaxed pace)"
@@ -41,16 +41,18 @@ def cut_spoken_head(pcm: np.ndarray, rate: int,
         first_words = [first_words]
     targets = [t for t in (norm_word(w) for w in first_words) if t]
     start = None
-    for w, t in words:
+    for i, (w, _) in enumerate(words):
         nw = norm_word(w)
         if not nw:
             continue
-        for target in targets:
+        for k, target in enumerate(targets):
             # 0.65: «слушои»/«слушай» (две ослышки) проходит, английская
             # тарабарщина тега (~0.3 к русским словам) — нет
             if nw == target or difflib.SequenceMatcher(
                     None, nw, target).ratio() >= 0.65:
-                start = max(0.0, t - margin)
+                # совпало k-е слово реплики (первое whisper мог слить с
+                # шапкой) — отступаем на k слов назад, начало не съедаем
+                start = max(0.0, words[max(0, i - k)][1] - margin)
                 break
         if start is not None:
             break
@@ -68,11 +70,20 @@ class HeadCutMiss(Exception):
     """Наговоренная шапка не найдена — предложение нельзя выпускать в эфир."""
 
 
-def find_silence_cut(pcm: np.ndarray, rate: int, search_s: float = 6.0,
+class GuardMiss(Exception):
+    """Сверка с текстом провалена (робо-заскок); аудио приложено."""
+
+    def __init__(self, reason: str, pcm: bytes):
+        super().__init__(reason)
+        self.pcm = pcm
+
+
+def find_silence_cut(pcm: np.ndarray, rate: int, search_s: float = 4.5,
                      min_gap_s: float = 0.25, margin: float = 0.05,
-                     ) -> float | None:
-    """Запасной срез: после шапки модель делает паузу перед репликой —
-    ищем самый длинный тихий провал в начале аудио и режем по его концу."""
+                     min_head_s: float = 1.0) -> float | None:
+    """Запасной срез: после шапки модель делает вдох-паузу — режем по
+    ПЕРВОМУ достаточному провалу тишины после min_head_s (дальние паузы
+    могут быть уже внутри реплики — их не трогаем)."""
     n = min(len(pcm), int(search_s * rate))
     if n < rate // 2:
         return None
@@ -84,14 +95,16 @@ def find_silence_cut(pcm: np.ndarray, rate: int, search_s: float = 6.0,
     # огибающая по окнам 30мс: тихо = ниже 5% пика
     frames = head[: (n // win) * win].reshape(-1, win).max(axis=1)
     quiet = frames < 0.05 * peak
-    best_len, best_end, run = 0, None, 0
+    run = 0
     for i, q in enumerate(quiet):
-        run = run + 1 if q else 0
-        if run > best_len:
-            best_len, best_end = run, i + 1
-    if best_len * win < min_gap_s * rate or best_end is None:
-        return None
-    return max(0.0, best_end * win / rate - margin)
+        if q:
+            run += 1
+            continue
+        if (run * win >= min_gap_s * rate
+                and (i - run) * win >= min_head_s * rate):
+            return max(0.0, i * win / rate - margin)
+        run = 0
+    return None
 
 
 def normalize_peak(pcm: np.ndarray, target: int = 23000) -> np.ndarray:
@@ -110,19 +123,20 @@ class VoxTTS(TTSModel):
 
     def __init__(self, reference_wav: Path, reference_text: str,
                  tag: str = DEFAULT_TAG, stress: bool = True, seed: int = 42,
-                 word_timestamps=None, validator=None):
-        # word_timestamps(pcm, rate) -> [(слово, старт_с)] — whisper стража
-        # validator(text, pcm, rate) -> bool — тот же страж, что у fish
+                 word_timestamps=None, check_speech: bool = True):
+        # word_timestamps(pcm, rate) -> [(слово, старт_с)] — один прогон
+        # whisper на предложение: и срез шапки, и СТТ-страж по нему же
         self._ref_wav = str(reference_wav)
         self._ref_text = reference_text
         self._tag = tag
         self._stress = stress
         self._seed = seed
         self._timestamps = word_timestamps
-        self._validator = validator
+        self._check_speech = check_speech
         self._model = None
         self._accents = None
         self._lock = asyncio.Lock()
+        self._gen_lock = asyncio.Lock()  # GPU-генерация строго по одному
 
     def _load_sync(self) -> None:
         from voxcpm import VoxCPM
@@ -158,23 +172,37 @@ class VoxTTS(TTSModel):
         return arr.clip(-32768, 32767).astype(np.int16)
 
     async def _sentence_pcm(self, sentence: str, seed: int) -> bytes:
-        pcm = await asyncio.to_thread(self._gen_sync, self.prepare(sentence), seed)
-        if self._tag and self._timestamps:
+        prepared = self.prepare(sentence)
+        async with self._gen_lock:
+            pcm = await asyncio.to_thread(self._gen_sync, prepared, seed)
+        cut = 0.0
+        words: list[tuple[str, float]] = []
+        need_whisper = self._timestamps and (self._tag or self._check_speech)
+        if need_whisper:
             words = await self._timestamps(pcm.tobytes(), self.sample_rate)
+        if self._tag and self._timestamps:
             first = strip_markers(sentence).split()[:3]
             if first:
-                pcm, cut = cut_spoken_head(pcm, self.sample_rate, words, first)
-                if cut is None:
+                trimmed, found = cut_spoken_head(
+                    pcm, self.sample_rate, words, first)
+                if found is None:
                     # по словам не нашли — запасной срез по паузе после шапки
-                    cut = find_silence_cut(pcm, self.sample_rate)
-                    if cut is None:
+                    found = find_silence_cut(pcm, self.sample_rate)
+                    if found is None:
                         # английская шапка НЕ выходит в эфир никогда
                         raise HeadCutMiss(sentence[:40])
-                    pcm = pcm[int(cut * self.sample_rate):]
-                    print(f"[nova] vox-tts: срез по паузе {cut:.2f}с: {sentence[:40]!r}")
+                    trimmed = pcm[int(found * self.sample_rate):]
+                    print(f"[nova] vox-tts: срез по паузе {found:.2f}с: {sentence[:40]!r}")
                 else:
-                    print(f"[nova] vox-tts: срез {cut:.2f}с: {sentence[:40]!r}")
-        return normalize_peak(pcm).tobytes()
+                    print(f"[nova] vox-tts: срез {found:.2f}с: {sentence[:40]!r}")
+                pcm, cut = trimmed, found
+        out = normalize_peak(pcm).tobytes()
+        if self._check_speech and need_whisper:
+            # страж по ТОМУ ЖЕ прогону whisper: слова после среза
+            heard = " ".join(w for w, t in words if t >= cut)
+            if not speech_matches(strip_markers(sentence), heard):
+                raise GuardMiss(sentence[:40], out)
+        return out
 
     async def warmup(self) -> None:
         """VoxCPM2 грузится ~1.5 мин — греем при старте сервера, а не
@@ -189,32 +217,38 @@ class VoxTTS(TTSModel):
         except Exception as exc:
             print(f"[nova] vox-tts: прогрев не удался: {exc!r}")
 
+    async def _sentence_checked(self, sentence: str) -> bytes | None:
+        try:
+            try:
+                return await self._sentence_pcm(sentence, self._seed)
+            except (HeadCutMiss, GuardMiss):
+                # заскок/шапка детерминированы по (текст, seed): тот же seed
+                # дал бы то же самое — пересинтез со сдвигом
+                print(f"[nova] vox-tts: пересинтез (seed+1): {sentence[:50]!r}")
+                try:
+                    return await self._sentence_pcm(sentence, self._seed + 1)
+                except GuardMiss as exc:
+                    return exc.pcm  # дважды заскок — отдаём как есть (как fish)
+        except Exception as exc:
+            print(f"[nova] ошибка vox-tts (предложение пропущено): {exc!r}")
+            return None
+
     async def synthesize(self, text: str) -> AsyncIterator[bytes]:
         async with self._lock:
             if self._model is None:
                 await asyncio.to_thread(self._load_sync)
-        # одна GPU-модель — последовательно (в отличие от облака fish)
-        for sentence in split_for_tts(strip_markers(text))[:20]:
-            try:
-                try:
-                    pcm = await self._sentence_pcm(sentence, self._seed)
-                except HeadCutMiss:
-                    # другой seed — другая генерация, шапка обычно находится
-                    print(f"[nova] vox-tts: шапка не найдена, пересинтез: {sentence[:50]!r}")
-                    pcm = await self._sentence_pcm(sentence, self._seed + 1)
-                if self._validator and not await self._validator(
-                        sentence, pcm, self.sample_rate):
-                    # заскок детерминирован по (текст, seed): тот же seed
-                    # дал бы тот же заскок — пересинтез со сдвигом
-                    print(f"[nova] vox-tts: сверка провалена, пересинтез: {sentence[:50]!r}")
-                    pcm = await self._sentence_pcm(sentence, self._seed + 1)
-            except Exception as exc:
-                print(f"[nova] ошибка vox-tts (предложение пропущено): {exc!r}")
-                continue
-            yield pcm
+        sentences = split_for_tts(strip_markers(text))[:20]
+        # конвейер внахлёст: GPU-генерация по одному (gen_lock), но пока
+        # предложение идёт через whisper — следующее уже генерится
+        tasks = [asyncio.create_task(self._sentence_checked(s))
+                 for s in sentences]
+        for task in tasks:
+            pcm = await task
+            if pcm:
+                yield pcm
 
 
-def build_vox_tts(asr, ref_dir: Path, validator) -> VoxTTS:
+def build_vox_tts(asr, ref_dir: Path) -> VoxTTS:
     return VoxTTS(
         reference_wav=ref_dir / "voice_sample.wav",
         reference_text=(ref_dir / "voice_sample.txt").read_text(
@@ -223,5 +257,5 @@ def build_vox_tts(asr, ref_dir: Path, validator) -> VoxTTS:
         stress=os.environ.get("NOVA_VOX_STRESS", "1") != "0",
         seed=int(os.environ.get("NOVA_VOX_SEED", "42")),
         word_timestamps=asr.word_timestamps,
-        validator=validator,
+        check_speech=os.environ.get("NOVA_TTS_GUARD", "1") == "1",
     )

@@ -36,9 +36,11 @@ def test_cut_spoken_head_fuzzy_and_second_word():
     fuzzy = [("слушои", 2.0)]
     out, cut = cut_spoken_head(pcm, rate, fuzzy, ["Слушай", "я"], margin=0.0)
     assert cut == 2.0
+    # совпало ВТОРОЕ слово («я») — отступаем на одно слово whisper назад,
+    # чтобы не съесть «Слушай» (оно и есть та «тарабарщина» перед ним)
     second = [("тарабарщина", 1.0), ("я", 2.5)]
     out, cut = cut_spoken_head(pcm, rate, second, ["Слушай", "я"], margin=0.0)
-    assert cut == 2.5
+    assert cut == 1.0
 
 
 def test_cut_spoken_head_fade_in():
@@ -81,11 +83,12 @@ def make_vox(**kw):
     tts._stress = kw.get("stress", False)
     tts._seed = 42
     tts._timestamps = kw.get("word_timestamps")
-    tts._validator = kw.get("validator")
+    tts._check_speech = kw.get("check_speech", False)
     tts._model = object()   # «загружена»
     tts._accents = kw.get("accents")
     tts.sample_rate = 100
     tts._lock = asyncio.Lock()
+    tts._gen_lock = asyncio.Lock()
     return tts
 
 
@@ -126,13 +129,18 @@ async def test_synthesize_sequential_cut_and_normalize():
     assert int(np.abs(first).max()) == 23000   # нормализация
 
 
-async def test_validator_fail_regenerates_with_new_seed():
+async def test_guard_fail_regenerates_with_new_seed():
+    # страж на ТОМ ЖЕ прогоне whisper: первая генерация «заскок»
+    calls = {"n": 0}
     seeds = []
 
-    async def guard(sentence, pcm, rate):
-        return len(seeds) > 1   # первая генерация «заскок», вторая ок
+    async def stamps(pcm, rate):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return [("бурбуляция", 0.1)]        # услышано не то
+        return [("одно", 0.1), ("предложение", 0.5)]
 
-    tts = make_vox(validator=guard, tag="")
+    tts = make_vox(word_timestamps=stamps, tag="", check_speech=True)
 
     def fake_gen(prepared, seed):
         seeds.append(seed)
@@ -229,13 +237,15 @@ def test_build_vox_tts_reads_env(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_VOX_TAG", "(мой тег)")
     monkeypatch.setenv("NOVA_VOX_STRESS", "0")
     monkeypatch.setenv("NOVA_VOX_SEED", "7")
+    monkeypatch.setenv("NOVA_TTS_GUARD", "0")
 
     class FakeASR:
         async def word_timestamps(self, pcm, rate):
             return []
 
-    tts = build_vox_tts(FakeASR(), tmp_path, validator=None)
+    tts = build_vox_tts(FakeASR(), tmp_path)
     assert isinstance(tts, VoxTTS)
     assert tts._tag == "(мой тег)"
     assert tts._stress is False
     assert tts._seed == 7
+    assert tts._check_speech is False

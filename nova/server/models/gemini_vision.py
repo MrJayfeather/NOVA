@@ -15,6 +15,13 @@ DESCRIBE_PROMPT = (
     "Если кадр почти не отличается от предыдущего — пиши «N: то же». {prev}"
 )
 
+QUESTION_PROMPT = (
+    "Это свежие кадры экрана пользователя. Пользователь сейчас спросил: "
+    "«{q}». Опиши по-русски в 1-3 строках, что видно на экране, ОСОБЕННО "
+    "всё, что относится к вопросу — даты, время, цифры, надписи читай "
+    "точно, как написано. Только факты, без домыслов."
+)
+
 
 class GeminiEyes(VisionLLM):
     """Облачные глаза: Gemini описывает кадры текстом, мозг получает
@@ -73,11 +80,24 @@ class GeminiEyes(VisionLLM):
         self._last_summary = desc
         return desc
 
+    async def describe_for_question(self, frames: list[bytes],
+                                    question: str) -> str:
+        """Прицельное описание под вопрос пользователя (мимо кэша: общая
+        сводка не заметит дату в углу, если о ней спрашивают)."""
+        if not frames:
+            return ""
+        try:
+            return await self._call_gemini(
+                frames, QUESTION_PROMPT.format(q=question[:300]))
+        except Exception as exc:
+            print(f"[nova] глаза-облако недоступны: {exc!r}")
+            return BAD_SCREEN
+
     async def reply_to_user(
         self, text: str, frames: list[bytes], history: list[dict]
     ) -> str:
         if frames:
-            desc = await self.describe(frames[-2:])
+            desc = await self.describe_for_question(frames[-2:], text)
             text = f"[экран: {desc}]\n{text}"
         return await self._inner.reply_to_user(text, [], history)
 
