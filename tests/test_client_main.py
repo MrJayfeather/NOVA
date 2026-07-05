@@ -176,3 +176,59 @@ def test_on_message_logs_latency_and_prints(tmp_path, capsys):
     rec = json.loads((tmp_path / "metrics.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert rec["kind"] == "speak_latency"
     assert rec["latency_s"] >= 0.5
+
+
+# ---- со-просмотр (этап 3В) ----
+
+async def test_capture_feeds_clip_buffer_in_motion():
+    from nova.client.motion import MotionGate
+
+    cfg = ClientConfig(server_url="ws://x", periodic_fps=100.0,
+                       burst_frames=2, clip_fps=100)
+    gate = MotionGate(on_events=1, on_window_s=30.0)
+    state = {}
+    await capture_loop(
+        source=FakeSource(),
+        detector=FrameDetector(motion_threshold=12.0, scene_threshold=40.0),
+        burst=BurstCollector(size=2),
+        conn=FakeConn(), cfg=cfg, iterations=8, state=state, gate=gate,
+    )
+    # сцена сменилась -> событие -> MOTION -> кадры пошли в клип-буфер
+    assert state.get("clip_frames")
+
+
+async def test_capture_no_gate_works_as_before():
+    cfg = ClientConfig(server_url="ws://x", periodic_fps=100.0, burst_frames=2)
+    state = {}
+    await capture_loop(
+        source=FakeSource(),
+        detector=FrameDetector(motion_threshold=12.0, scene_threshold=40.0),
+        burst=BurstCollector(size=2),
+        conn=FakeConn(), cfg=cfg, iterations=8, state=state, gate=None,
+    )
+    assert "clip_frames" not in state      # рубильник: поведение 3А
+
+
+def test_cinema_hotkey_toggles(capsys):
+    from nova.client.main import apply_cinema
+    from nova.client.motion import MotionGate
+
+    gate = MotionGate()
+
+    class Rec:
+        started = False
+
+        def start(self):
+            self.started = True
+
+        def stop(self):
+            return None
+
+    rec = Rec()
+    apply_cinema(gate, rec, on=True, via="хоткей", audio=True)
+    assert gate.cinema and rec.started
+    out = capsys.readouterr().out
+    assert "кино-режим: ВКЛ" in out
+    apply_cinema(gate, rec, on=False, via="голосом", audio=True)
+    assert not gate.cinema
+    assert "кино-режим: ВЫКЛ" in capsys.readouterr().out

@@ -10,6 +10,7 @@ DEFAULT_HOTKEYS = {
     "pause": "ctrl+alt+p",
     "feedback_up": "ctrl+alt+up",
     "feedback_down": "ctrl+alt+down",
+    "cinema": "ctrl+alt+v",
 }
 
 
@@ -24,6 +25,14 @@ class ClientConfig(BaseModel):
     # минимум секунд между событиями детектора: видео на экране иначе
     # устраивает шторм кадров (обрывы keepalive, очередь реплик)
     event_cooldown_s: float = 4.0
+    # со-просмотр (этап 3В): движуха -> клипы вместо кадров
+    cowatch: bool = True
+    clip_s: float = 15.0
+    clip_fps: int = 8
+    clip_audio: bool = True
+    clip_kbps: int = 1500
+    motion_on: int = 3
+    motion_off: float = 60.0
     hotkeys: dict[str, str] = DEFAULT_HOTKEYS
 
 

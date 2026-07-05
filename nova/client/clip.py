@@ -8,27 +8,35 @@ import numpy as np
 
 def encode_clip(frames: list, fps: int, wav_path: str | None,
                 out_path: str) -> bool:
-    """Кадры BGR -> h264 mp4 (720p максимум); wav_path муксится в звук.
-    ffmpeg обязателен; любая ошибка -> False и печать."""
+    """Кадры -> h264 mp4 (720p максимум); wav_path муксится в звук.
+    Кадры — либо numpy BGR, либо готовые JPEG-байты (конвейер клиента
+    отдаёт jpeg). ffmpeg обязателен; любая ошибка -> False и печать."""
     if not frames:
         return False
-    h, w = frames[0].shape[:2]
-    # даунскейл к 720p по высоте, чётные размеры для h264
-    scale = min(1.0, 720 / h)
-    out_w, out_h = int(w * scale) // 2 * 2, int(h * scale) // 2 * 2
-    cmd = ["ffmpeg", "-y", "-v", "error",
-           "-f", "rawvideo", "-pix_fmt", "bgr24",
-           "-s", f"{w}x{h}", "-r", str(fps), "-i", "-"]
+    jpeg_input = isinstance(frames[0], (bytes, bytearray))
+    cmd = ["ffmpeg", "-y", "-v", "error"]
+    if jpeg_input:
+        cmd += ["-f", "image2pipe", "-c:v", "mjpeg", "-r", str(fps), "-i", "-"]
+        vf = "scale='min(1280,iw)':-2"
+    else:
+        h, w = frames[0].shape[:2]
+        # даунскейл к 720p по высоте, чётные размеры для h264
+        scale = min(1.0, 720 / h)
+        out_w, out_h = int(w * scale) // 2 * 2, int(h * scale) // 2 * 2
+        cmd += ["-f", "rawvideo", "-pix_fmt", "bgr24",
+                "-s", f"{w}x{h}", "-r", str(fps), "-i", "-"]
+        vf = f"scale={out_w}:{out_h}"
     if wav_path:
         cmd += ["-i", wav_path, "-c:a", "aac", "-shortest"]
-    cmd += ["-vf", f"scale={out_w}:{out_h}",
+    cmd += ["-vf", vf,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
-            "-movflags", "+faststart", out_path]
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart", out_path]
     try:
         p = subprocess.Popen(cmd, stdin=subprocess.PIPE,
                              stderr=subprocess.PIPE)
         for f in frames:
-            p.stdin.write(np.ascontiguousarray(f).tobytes())
+            p.stdin.write(bytes(f) if jpeg_input
+                          else np.ascontiguousarray(f).tobytes())
         p.stdin.close()
         p.wait(timeout=60)
         return p.returncode == 0 and Path(out_path).exists()
