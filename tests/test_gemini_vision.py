@@ -21,6 +21,7 @@ def make_eyes(inner, describe_text="1: рабочий стол"):
     eyes._max_frames = 4
     eyes._cache = {}
     eyes._last_summary = ""
+    eyes.on_seen = None
     eyes.gemini_calls = 0
 
     async def fake_call(frames, prompt):
@@ -97,6 +98,17 @@ async def test_reply_describe_targets_question():
     # прицельное описание мимо кэша: тот же кадр, другой вопрос — новый вызов
     await eyes.reply_to_user("который час?", [b"old", b"fresh"], [])
     assert "который час?" in prompts[1]
+
+
+async def test_on_seen_gets_fresh_descriptions():
+    eyes = make_eyes(FakeInner(), describe_text="1: замес у точки")
+    seen = []
+    eyes.on_seen = seen.append
+    await eyes.describe([b"j1"])
+    await eyes.describe([b"j1"])           # кэш — хук молчит
+    assert seen == ["замес у точки"]
+    await eyes.reply_to_user("что там?", [b"j2"], [])
+    assert len(seen) == 2                  # прицельное описание тоже пишется
 
 
 def test_wrap_eyes_modes():

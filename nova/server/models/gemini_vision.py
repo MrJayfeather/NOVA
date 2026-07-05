@@ -31,12 +31,15 @@ class GeminiEyes(VisionLLM):
 
     def __init__(self, inner: VisionLLM, api_key: str,
                  model: str = "gemini-3.1-flash-lite",
-                 timeout: float = 20.0, max_frames: int = 4):
+                 timeout: float = 20.0, max_frames: int = 4,
+                 on_seen=None):
         self._inner = inner
         self._model = model
         self._max_frames = max_frames
         self._cache: dict[str, str] = {}   # sha1(jpeg) -> строка описания
         self._last_summary = ""
+        # хук летописи: каждое СВЕЖЕЕ описание уходит в память ([видела])
+        self.on_seen = on_seen
         self._client = httpx.AsyncClient(
             base_url=GEMINI_URL, timeout=timeout,
             headers={"x-goog-api-key": api_key})
@@ -70,6 +73,8 @@ class GeminiEyes(VisionLLM):
                 text = ""
             lines = [l.split(":", 1)[-1].strip()
                      for l in text.splitlines() if l.strip()]
+            if self.on_seen and lines:
+                self.on_seen("; ".join(lines))
             for (k, _), line in zip(fresh, lines):
                 self._cache[k] = line
             for k, _ in fresh:
@@ -88,11 +93,18 @@ class GeminiEyes(VisionLLM):
         if not frames:
             return ""
         try:
-            return await self._call_gemini(
+            desc = await self._call_gemini(
                 frames, QUESTION_PROMPT.format(q=question[:300]))
+            if self.on_seen and desc:
+                self.on_seen(desc)
+            return desc
         except Exception as exc:
             print(f"[nova] глаза-облако недоступны: {exc!r}")
             return BAD_SCREEN
+
+    async def complete_text(self, prompt: str) -> str:
+        """Текстовый вызов без кадров — резервный конденсер памяти."""
+        return await self._call_gemini([], prompt)
 
     async def reply_to_user(
         self, text: str, frames: list[bytes], history: list[dict]

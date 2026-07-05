@@ -19,6 +19,16 @@ def make_llm():
     return QwenVLM(persona_prompt="Ты — NOVA.", base_url="http://x/v1", model="test-model")
 
 
+def test_context_provider_extends_system():
+    llm = QwenVLM.__new__(QwenVLM)
+    llm._persona = "ты NOVA"
+    llm._context_provider = lambda: "ПАМЯТЬ: вчера был турнир"
+    msgs = llm.build_reply_messages("привет", [], [])
+    assert msgs[0]["role"] == "system"
+    assert "ты NOVA" in msgs[0]["content"]
+    assert "вчера был турнир" in msgs[0]["content"]
+
+
 async def test_complete_plain_call():
     sent = {}
 

@@ -28,10 +28,20 @@ def _image_part(jpeg: bytes) -> dict:
 
 
 class QwenVLM(VisionLLM):
-    def __init__(self, persona_prompt: str, base_url: str, model: str, timeout: float = 60.0):
+    def __init__(self, persona_prompt: str, base_url: str, model: str,
+                 timeout: float = 60.0, context_provider=None):
         self._persona = persona_prompt
         self._model = model
+        # память NOVA: digest+facts добавляются к системному промпту
+        self._context_provider = context_provider
         self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout)
+
+    def _system(self) -> str:
+        if self._context_provider:
+            extra = self._context_provider()
+            if extra:
+                return f"{self._persona}\n\n{extra}"
+        return self._persona
 
     def build_reply_messages(
         self, text: str, frames: list[bytes], history: list[dict]
@@ -43,7 +53,7 @@ class QwenVLM(VisionLLM):
             parts.append({"type": "text", "text": text})
             content = parts
         return [
-            {"role": "system", "content": self._persona},
+            {"role": "system", "content": self._system()},
             *history[-100:],
             {"role": "user", "content": content},
         ]
@@ -54,7 +64,7 @@ class QwenVLM(VisionLLM):
         content = [_image_part(f) for f in frames[-8:]]
         content.append({"type": "text", "text": COMMENT_INSTRUCTION.format(event=event)})
         return [
-            {"role": "system", "content": self._persona},
+            {"role": "system", "content": self._system()},
             *history[-100:],
             {"role": "user", "content": content},
         ]
