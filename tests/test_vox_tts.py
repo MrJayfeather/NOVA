@@ -84,6 +84,7 @@ def make_vox(**kw):
     tts._seed = 42
     tts._timestamps = kw.get("word_timestamps")
     tts._check_speech = kw.get("check_speech", False)
+    tts._pause_factor = kw.get("pause_factor", 0.0)
     tts._model = object()   # «загружена»
     tts._accents = kw.get("accents")
     tts.sample_rate = 100
@@ -214,6 +215,47 @@ async def test_head_miss_falls_back_to_silence_then_skip():
     tts2._gen_sync = lambda prepared, seed: np.full(400, 9000, dtype=np.int16)
     chunks2 = [c async for c in tts2.synthesize("Привет.")]
     assert chunks2 == []                           # тишина лучше английского
+
+
+def test_stretch_pauses_extends_only_silence():
+    from nova.server.models.vox_tts import stretch_pauses
+
+    rate = 1000
+    speech1 = np.full(500, 10000, dtype=np.int16)
+    gap = np.zeros(200, dtype=np.int16)          # 0.2с тишины
+    speech2 = np.full(500, 10000, dtype=np.int16)
+    pcm = np.concatenate([speech1, gap, speech2])
+    out = stretch_pauses(pcm, rate, factor=2.0)
+    # пауза удвоилась (~+200 сэмплов), речь не тронута
+    assert len(out) - len(pcm) >= 150
+    assert int(np.abs(out).max()) == 10000
+
+
+def test_stretch_pauses_noop_when_off():
+    from nova.server.models.vox_tts import stretch_pauses
+
+    pcm = np.full(100, 5000, dtype=np.int16)
+    assert len(stretch_pauses(pcm, 100, factor=1.0)) == 100
+
+
+def test_build_vox_tts_prefers_vox_reference(monkeypatch, tmp_path):
+    from nova.server.models.vox_tts import build_vox_tts
+
+    (tmp_path / "voice_sample.wav").write_bytes(b"RIFF")
+    (tmp_path / "voice_sample.txt").write_text("общий", encoding="utf-8")
+    (tmp_path / "voice_sample_vox.wav").write_bytes(b"RIFF")
+    (tmp_path / "voice_sample_vox.txt").write_text("миксовый", encoding="utf-8")
+    monkeypatch.setenv("NOVA_VOX_PAUSES", "1.5")
+
+    class FakeASR:
+        async def word_timestamps(self, pcm, rate):
+            return []
+
+    tts = build_vox_tts(FakeASR(), tmp_path)
+    assert tts._ref_text == "миксовый"
+    assert tts._ref_wav.endswith("voice_sample_vox.wav")
+    assert tts._pause_factor == 1.5
+    assert tts._tag == ""            # тег по умолчанию выключен
 
 
 async def test_warmup_loads_and_generates_once():

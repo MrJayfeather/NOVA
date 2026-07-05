@@ -10,8 +10,10 @@ from nova.server.models.base import TTSModel
 from nova.server.models.xtts_tts import split_for_tts
 from nova.server.tts_text import speech_matches, strip_markers
 
-# рецепт-чемпион (отслушан 05.07): темп «slower»; без very — «летит»
-DEFAULT_TAG = "(Speaking very slowly, at a calm and relaxed pace)"
+# Рецепт-чемпион 2.0 (отслушан 05.07, «r3p идеально»): БЕЗ стилевого тега.
+# Темп задаёт референс (медленные мягкие + бодрые тёплые реплики) +
+# растяжка пауз. Тег оставлен как выключенная опция: наговаривал шапку.
+DEFAULT_TAG = ""
 
 _VOWELS = "аеёиоуыэюяАЕЁИОУЫЭЮЯ"
 
@@ -115,6 +117,35 @@ def normalize_peak(pcm: np.ndarray, target: int = 23000) -> np.ndarray:
     return pcm
 
 
+def stretch_pauses(pcm: np.ndarray, rate: int, factor: float = 2.0,
+                   min_gap_s: float = 0.12) -> np.ndarray:
+    """Замедление без артефактов: удлиняем ТОЛЬКО тишину между словами,
+    сами слова не трогаем вообще (вердикт r3p: «идеально»)."""
+    if factor <= 1.0 or not len(pcm):
+        return pcm
+    amp = np.abs(pcm.astype(np.float32))
+    peak = float(amp.max())
+    if peak <= 0:
+        return pcm
+    win = max(1, int(0.03 * rate))
+    frames = amp[: (len(amp) // win) * win].reshape(-1, win).max(axis=1)
+    quiet = frames < 0.04 * peak
+    out = []
+    i = 0
+    while i < len(quiet):
+        j = i
+        while j < len(quiet) and quiet[j] == quiet[i]:
+            j += 1
+        seg = pcm[i * win: j * win]
+        out.append(seg)
+        # крайние тишины не трогаем — только вдохи между словами
+        if quiet[i] and (j - i) * win >= min_gap_s * rate and i > 0 and j < len(quiet):
+            out.append(np.zeros(int(len(seg) * (factor - 1)), dtype=pcm.dtype))
+        i = j
+    out.append(pcm[len(quiet) * win:])
+    return np.concatenate(out)
+
+
 class VoxTTS(TTSModel):
     """Локальный голос 3.0: VoxCPM2 (48кГц) по рецепту-чемпиону — тег
     темпа, ударения RUAccent (U+0301), срез наговоренной шапки."""
@@ -123,7 +154,8 @@ class VoxTTS(TTSModel):
 
     def __init__(self, reference_wav: Path, reference_text: str,
                  tag: str = DEFAULT_TAG, stress: bool = True, seed: int = 42,
-                 word_timestamps=None, check_speech: bool = True):
+                 word_timestamps=None, check_speech: bool = True,
+                 pause_factor: float = 2.0):
         # word_timestamps(pcm, rate) -> [(слово, старт_с)] — один прогон
         # whisper на предложение: и срез шапки, и СТТ-страж по нему же
         self._ref_wav = str(reference_wav)
@@ -133,6 +165,7 @@ class VoxTTS(TTSModel):
         self._seed = seed
         self._timestamps = word_timestamps
         self._check_speech = check_speech
+        self._pause_factor = pause_factor
         self._model = None
         self._accents = None
         self._lock = asyncio.Lock()
@@ -196,6 +229,8 @@ class VoxTTS(TTSModel):
                 else:
                     print(f"[nova] vox-tts: срез {found:.2f}с: {sentence[:40]!r}")
                 pcm, cut = trimmed, found
+        if self._pause_factor > 1.0:
+            pcm = stretch_pauses(pcm, self.sample_rate, self._pause_factor)
         out = normalize_peak(pcm).tobytes()
         if self._check_speech and need_whisper:
             # страж по ТОМУ ЖЕ прогону whisper: слова после среза
@@ -249,13 +284,20 @@ class VoxTTS(TTSModel):
 
 
 def build_vox_tts(asr, ref_dir: Path) -> VoxTTS:
+    # у voxcpm свой референс (микс темпа r3): дефолтный voice_sample.wav
+    # слишком бодрый — модель клонирует и спешку тоже
+    ref = ref_dir / "voice_sample_vox.wav"
+    ref_txt = ref_dir / "voice_sample_vox.txt"
+    if not ref.exists():
+        ref = ref_dir / "voice_sample.wav"
+        ref_txt = ref_dir / "voice_sample.txt"
     return VoxTTS(
-        reference_wav=ref_dir / "voice_sample.wav",
-        reference_text=(ref_dir / "voice_sample.txt").read_text(
-            encoding="utf-8").strip(),
+        reference_wav=ref,
+        reference_text=ref_txt.read_text(encoding="utf-8").strip(),
         tag=os.environ.get("NOVA_VOX_TAG", DEFAULT_TAG),
         stress=os.environ.get("NOVA_VOX_STRESS", "1") != "0",
         seed=int(os.environ.get("NOVA_VOX_SEED", "42")),
         word_timestamps=asr.word_timestamps,
         check_speech=os.environ.get("NOVA_TTS_GUARD", "1") == "1",
+        pause_factor=float(os.environ.get("NOVA_VOX_PAUSES", "2.0")),
     )
