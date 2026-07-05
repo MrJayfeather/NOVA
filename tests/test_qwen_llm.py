@@ -19,6 +19,31 @@ def make_llm():
     return QwenVLM(persona_prompt="Ты — NOVA.", base_url="http://x/v1", model="test-model")
 
 
+async def test_complete_plain_call():
+    sent = {}
+
+    class FakeResp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "выжимка"}}]}
+
+    class FakeClient:
+        async def post(self, url, json=None):
+            sent.update(json)
+            return FakeResp()
+
+    llm = QwenVLM.__new__(QwenVLM)
+    llm._model = "m"
+    llm._client = FakeClient()
+    out = await llm.complete("ты конденсер", "сожми это")
+    assert out == "выжимка"
+    assert sent["messages"][0]["role"] == "system"
+    assert sent["temperature"] == 0.3     # ровная выжимка, не креатив
+    assert "presence_penalty" not in sent
+
+
 def test_reply_messages_structure():
     history = [
         {"role": "user", "content": "раньше"},

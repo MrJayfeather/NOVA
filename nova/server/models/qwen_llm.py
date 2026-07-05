@@ -77,6 +77,25 @@ class QwenVLM(VisionLLM):
         r.raise_for_status()
         return trim_to_sentence(r.json()["choices"][0]["message"]["content"])
 
+    async def complete(self, system: str, user: str,
+                       max_tokens: int = 1200) -> str:
+        """Служебный вызов без персоны и штрафов — для конденсера памяти."""
+        r = await self._client.post(
+            "/chat/completions",
+            json={
+                "model": self._model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "max_tokens": max_tokens,
+                "temperature": 0.3,
+                "chat_template_kwargs": {"enable_thinking": False},
+            },
+        )
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
+
     async def reply_to_user(
         self, text: str, frames: list[bytes], history: list[dict]
     ) -> str:
