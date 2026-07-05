@@ -25,12 +25,16 @@ class ClientConfig(BaseModel):
     # минимум секунд между событиями детектора: видео на экране иначе
     # устраивает шторм кадров (обрывы keepalive, очередь реплик)
     event_cooldown_s: float = 4.0
-    # со-просмотр (этап 3В): движуха -> клипы вместо кадров
+    # со-просмотр (этап 3В): движуха -> клипы вместо кадров.
+    # дефолты под толстый канал Джея (150+ Мбит аплинк): 1080p/12fps;
+    # на тонком канале крутить вниз clip_max_w/clip_fps/clip_kbps
     cowatch: bool = True
     clip_s: float = 15.0
-    clip_fps: int = 8
+    clip_fps: int = 12
+    clip_max_w: int = 1920
+    clip_crf: int = 26
     clip_audio: bool = True
-    clip_kbps: int = 1500
+    clip_kbps: int = 8000
     motion_on: int = 3
     motion_off: float = 60.0
     hotkeys: dict[str, str] = DEFAULT_HOTKEYS

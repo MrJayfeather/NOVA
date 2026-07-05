@@ -97,13 +97,18 @@ async def clip_loop(state: dict, gate, recorder, sender, conn,
         wav = recorder.drain() if (gate.cinema and cfg.clip_audio) else None
         out = tempfile.mktemp(suffix=".mp4")
         ok = await asyncio.to_thread(
-            encode_clip, frames, cfg.clip_fps, wav, out)
+            encode_clip, frames, cfg.clip_fps, wav, out,
+            cfg.clip_max_w, cfg.clip_crf)
         if wav:
             Path(wav).unlink(missing_ok=True)
         if not ok:
             continue
         mp4 = Path(out).read_bytes()
         Path(out).unlink(missing_ok=True)
+        if len(mp4) > 19_000_000:
+            # inline-лимит Gemini ~20МБ: редкий сверхжирный клип пропускаем
+            print(f"[nova] клип {len(mp4)//1_000_000}МБ — слишком жирный, пропуск")
+            continue
         sender.offer(Clip(ts=now, mp4_b64=base64.b64encode(mp4).decode(),
                           dur_s=cfg.clip_s, audio=wav is not None))
 

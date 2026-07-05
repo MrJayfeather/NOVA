@@ -7,8 +7,8 @@ import numpy as np
 
 
 def encode_clip(frames: list, fps: int, wav_path: str | None,
-                out_path: str) -> bool:
-    """Кадры -> h264 mp4 (720p максимум); wav_path муксится в звук.
+                out_path: str, max_w: int = 1920, crf: int = 26) -> bool:
+    """Кадры -> h264 mp4 (ширина до max_w); wav_path муксится в звук.
     Кадры — либо numpy BGR, либо готовые JPEG-байты (конвейер клиента
     отдаёт jpeg). ffmpeg обязателен; любая ошибка -> False и печать."""
     if not frames:
@@ -17,11 +17,11 @@ def encode_clip(frames: list, fps: int, wav_path: str | None,
     cmd = ["ffmpeg", "-y", "-v", "error"]
     if jpeg_input:
         cmd += ["-f", "image2pipe", "-c:v", "mjpeg", "-r", str(fps), "-i", "-"]
-        vf = "scale='min(1280,iw)':-2"
+        vf = f"scale='min({max_w},iw)':-2"
     else:
         h, w = frames[0].shape[:2]
-        # даунскейл к 720p по высоте, чётные размеры для h264
-        scale = min(1.0, 720 / h)
+        # даунскейл к max_w по ширине, чётные размеры для h264
+        scale = min(1.0, max_w / w)
         out_w, out_h = int(w * scale) // 2 * 2, int(h * scale) // 2 * 2
         cmd += ["-f", "rawvideo", "-pix_fmt", "bgr24",
                 "-s", f"{w}x{h}", "-r", str(fps), "-i", "-"]
@@ -29,7 +29,7 @@ def encode_clip(frames: list, fps: int, wav_path: str | None,
     if wav_path:
         cmd += ["-i", wav_path, "-c:a", "aac", "-shortest"]
     cmd += ["-vf", vf,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf),
             "-pix_fmt", "yuv420p", "-movflags", "+faststart", out_path]
     try:
         p = subprocess.Popen(cmd, stdin=subprocess.PIPE,
