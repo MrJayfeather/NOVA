@@ -19,3 +19,24 @@ class WhisperASR(ASRModel):
 
     async def transcribe(self, pcm: bytes, sample_rate: int) -> str:
         return await asyncio.to_thread(self._transcribe_sync, pcm, sample_rate)
+
+    def _words_sync(self, pcm: bytes, sample_rate: int) -> list[tuple[str, float]]:
+        import numpy as np
+
+        audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+        # faster-whisper считает вход 16кГц: кратную частоту децимируем,
+        # некратную отдаём как есть и переводим времена в реальную шкалу
+        if sample_rate % 16000 == 0 and sample_rate > 16000:
+            audio = audio[:: sample_rate // 16000]
+            scale = 1.0
+        else:
+            scale = 16000.0 / sample_rate
+        segments, _ = self._model.transcribe(
+            audio, language="ru", word_timestamps=True)
+        return [(w.word, w.start * scale)
+                for s in segments for w in (s.words or [])]
+
+    async def word_timestamps(
+        self, pcm: bytes, sample_rate: int
+    ) -> list[tuple[str, float]]:
+        return await asyncio.to_thread(self._words_sync, pcm, sample_rate)
