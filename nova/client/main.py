@@ -18,7 +18,8 @@ from nova.shared.protocol import (
 
 
 async def capture_loop(source, detector, burst, conn, cfg: ClientConfig,
-                       iterations: int | None = None):
+                       iterations: int | None = None,
+                       state: dict | None = None):
     period = 1.0 / cfg.periodic_fps
     last_periodic = 0.0
     i = 0
@@ -28,6 +29,11 @@ async def capture_loop(source, detector, burst, conn, cfg: ClientConfig,
         if item is None:
             continue
         ts, jpeg, gray_small, (cursor_x, cursor_y) = item
+        if state is not None:
+            # свежайший кадр всегда под рукой: уйдёт на сервер вместе с
+            # репликой пользователя (глаза видят экран НА МОМЕНТ вопроса,
+            # а не последнее событие детектора)
+            state["last_frame"] = (ts, jpeg, cursor_x, cursor_y)
         event = detector.process(gray_small, ts)
         if event and not burst.active:
             conn.send(DetectorEvent(ts=ts, event=event))
@@ -66,8 +72,11 @@ def make_on_message(player: Player, metrics: Metrics, state: dict):
     return on_message
 
 
-async def audio_in_loop(conn, source, state: dict):
-    while True:
+async def audio_in_loop(conn, source, state: dict,
+                        iterations: int | None = None):
+    i = 0
+    while iterations is None or i < iterations:
+        i += 1
         segment = await asyncio.to_thread(source.get)
         if segment is None:
             continue
@@ -75,6 +84,15 @@ async def audio_in_loop(conn, source, state: dict):
         if state.get("speaking") or time.time() < state.get("deaf_until", 0):
             continue
         state["last_event_ts"] = time.time()
+        last = state.get("last_frame")
+        if last:
+            # свежий кадр — ПЕРЕД репликой (websocket сохраняет порядок):
+            # ответ мозга опирается на экран в момент вопроса
+            _, jpeg, cx, cy = last
+            conn.send_frame(Frame(
+                ts=time.time(), jpeg_b64=base64.b64encode(jpeg).decode(),
+                cursor_x=cx, cursor_y=cy,
+            ))
         conn.send(AudioSegment(
             ts=time.time(), pcm_b64=base64.b64encode(segment).decode(), sample_rate=16000,
         ))
@@ -157,7 +175,8 @@ async def amain() -> None:
 
     coros = [
         conn.run(),
-        capture_loop(frame_source, detector, BurstCollector(cfg.burst_frames), ConnAdapter, cfg),
+        capture_loop(frame_source, detector, BurstCollector(cfg.burst_frames), ConnAdapter, cfg,
+                     state=state),
         hotkey_loop(ConnAdapter, player, actions, state),
     ]
     if audio_source is not None:

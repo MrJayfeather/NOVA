@@ -56,6 +56,44 @@ async def test_capture_loop_sends_periodic_event_and_burst():
     assert all(b.burst_id == bursts[0].burst_id for b in bursts)
 
 
+async def test_capture_loop_tracks_last_frame_in_state():
+    cfg = ClientConfig(server_url="ws://x", periodic_fps=100.0, burst_frames=2)
+    state = {}
+    await capture_loop(
+        source=FakeSource(),
+        detector=FrameDetector(motion_threshold=12.0, scene_threshold=40.0),
+        burst=BurstCollector(size=cfg.burst_frames),
+        conn=FakeConn(),
+        cfg=cfg,
+        iterations=3,
+        state=state,
+    )
+    # в state всегда лежит самый свежий кадр — для «глаз в реальном времени»
+    ts, jpeg, cx, cy = state["last_frame"]
+    assert jpeg == b"jpg2"
+    assert (cx, cy) == (5, 6)
+
+
+async def test_audio_sends_fresh_frame_before_speech():
+    from nova.client.main import audio_in_loop
+    from nova.shared.protocol import AudioSegment
+
+    class OneShotAudio:
+        def __init__(self):
+            self.items = [b"\x01\x00" * 100]
+
+        def get(self):
+            return self.items.pop(0) if self.items else None
+
+    conn = FakeConn()
+    state = {"last_frame": (123.0, b"freshjpg", 7, 8)}
+    await audio_in_loop(conn, OneShotAudio(), state, iterations=2)
+    # свежий кадр уходит ПЕРЕД репликой: мозг видит экран на момент вопроса
+    assert conn.frames, "кадр не отправлен"
+    speech = [m for m in conn.sent if isinstance(m, AudioSegment)]
+    assert speech, "реплика не отправлена"
+
+
 def test_to_pynput_combo():
     assert to_pynput_combo("ctrl+alt+m") == "<ctrl>+<alt>+m"
     assert to_pynput_combo("ctrl+alt+up") == "<ctrl>+<alt>+<up>"
