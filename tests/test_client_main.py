@@ -147,6 +147,15 @@ def test_to_pynput_combo():
     assert to_pynput_combo("F9") == "<f9>"
 
 
+def test_layout_variants_add_russian_letter():
+    from nova.client.main import layout_variants
+
+    # буквенный хоткей живёт в обеих раскладках (m -> ь)
+    assert layout_variants("ctrl+alt+m") == ["<ctrl>+<alt>+m", "<ctrl>+<alt>+ь"]
+    # стрелки от раскладки не зависят — вариант один
+    assert layout_variants("ctrl+alt+up") == ["<ctrl>+<alt>+<up>"]
+
+
 def test_on_message_logs_latency_and_prints(tmp_path, capsys):
     class NullSink(StreamSink):
         def start(self, sample_rate):

@@ -127,14 +127,34 @@ def to_pynput_combo(combo: str) -> str:
     return "+".join(parts)
 
 
+# на русской раскладке клавиша M отдаёт «ь» — латинский бинд глохнет;
+# регистрируем буквенные хоткеи в обеих раскладках (QWERTY -> ЙЦУКЕН)
+_RU_KEYS = dict(zip("qwertyuiopasdfghjklzxcvbnm", "йцукенгшщзфывапролдячсмить"))
+
+
+def layout_variants(combo: str) -> list[str]:
+    latin = to_pynput_combo(combo)
+    ru_parts = []
+    changed = False
+    for token in combo.lower().split("+"):
+        token = token.strip()
+        if len(token) == 1 and token in _RU_KEYS:
+            ru_parts.append(_RU_KEYS[token])
+            changed = True
+        else:
+            ru_parts.append(token if len(token) == 1 else f"<{token}>")
+    return [latin, "+".join(ru_parts)] if changed else [latin]
+
+
 def register_hotkeys(cfg: ClientConfig, loop, actions: asyncio.Queue) -> None:
     from pynput import keyboard as pk
 
     mapping = {}
     for action, combo in cfg.hotkeys.items():
-        mapping[to_pynput_combo(combo)] = (
-            lambda a=action: loop.call_soon_threadsafe(actions.put_nowait, a)
-        )
+        for variant in layout_variants(combo):
+            mapping[variant] = (
+                lambda a=action: loop.call_soon_threadsafe(actions.put_nowait, a)
+            )
     listener = pk.GlobalHotKeys(mapping)
     listener.daemon = True
     listener.start()
