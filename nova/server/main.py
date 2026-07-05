@@ -15,8 +15,9 @@ from nova.shared.protocol import (
 
 
 def build_models(mock: bool, persona_prompt: str):
+    # четвёртым возвращается «голый» мозг (QwenVLM) — для конденсера памяти
     if mock:
-        return MockASR(), MockLLM(persona_prompt=persona_prompt), MockTTS()
+        return MockASR(), MockLLM(persona_prompt=persona_prompt), MockTTS(), None
     from nova.server.models.gemini_vision import wrap_eyes
     from nova.server.models.qwen_llm import QwenVLM
     from nova.server.models.whisper_asr import WhisperASR
@@ -24,11 +25,12 @@ def build_models(mock: bool, persona_prompt: str):
     from nova.server.tts_text import speech_matches, strip_markers
 
     asr = WhisperASR(model_name=os.environ.get("NOVA_WHISPER", "large-v3-turbo"))
-    llm = wrap_eyes(QwenVLM(
+    brain = QwenVLM(
         persona_prompt=persona_prompt,
         base_url=os.environ.get("NOVA_VLLM_URL", "http://127.0.0.1:5000/v1"),
         model=os.environ.get("NOVA_MODEL", "Qwen/Qwen3.6-27B-FP8"),
-    ))
+    )
+    llm = wrap_eyes(brain)
     persona = os.environ.get("NOVA_PERSONA", "nova")
     ref_dir = Path("personas") / persona
     ref_txt = ref_dir / "voice_sample.txt"
@@ -83,7 +85,7 @@ def build_models(mock: bool, persona_prompt: str):
         if mode != "xtts":
             print("[nova] нет voice_sample.txt — откатываюсь на xtts")
         tts = XttsTTS(speaker_wav=ref_dir / "voice_sample.wav")
-    return asr, llm, tts
+    return asr, llm, tts, brain
 
 
 def create_app(
@@ -96,18 +98,65 @@ def create_app(
     app = FastAPI(title="NOVA server")
     persona = os.environ.get("NOVA_PERSONA", "nova")
     persona_prompt = load_persona_prompt(persona, personas_root)
-    asr, llm, tts = build_models(mock, persona_prompt)
+    asr, llm, tts, brain = build_models(mock, persona_prompt)
     app.state.clients = 0
     app.state.last_activity = time.time()
 
+    # ---- память (этап 3А): дневник, конспект, факты — переживают бокс ----
+    memory = None
+    if not mock and brain is not None \
+            and os.environ.get("NOVA_MEMORY", "1") == "1":
+        from nova.server.memory.condenser import Condenser
+        from nova.server.memory.store import MemoryStore
+        from nova.server.memory.sync import MemorySync
+        from nova.server.orchestrator import Memory
+
+        mem_root = Path(os.environ.get("NOVA_MEMORY_DIR",
+                                       "/workspace/nova-memory"))
+        store = MemoryStore(mem_root)
+        sync = MemorySync(mem_root)
+        sync.ensure_repo()
+        brain._context_provider = store.system_context
+        if hasattr(llm, "on_seen"):
+            llm.on_seen = store.append_seen
+        chat = brain.complete
+        if os.environ.get("NOVA_MEMORY_LLM") == "gemini" \
+                and hasattr(llm, "complete_text"):
+            async def chat(s, u, max_tokens=2000):  # noqa: F811
+                return await llm.complete_text(s + "\n\n" + u)
+        condenser = Condenser(store, chat=chat, idle_s=float(
+            os.environ.get("NOVA_CONDENSE_IDLE_S", "600")))
+        memory = Memory(store=store, condenser=condenser, sync=sync,
+                        chronicle_s=float(
+                            os.environ.get("NOVA_CHRONICLE_S", "10")))
+        print(f"[nova] память включена: {mem_root}")
+
     @app.on_event("startup")
     async def _warm_tts():
+        import asyncio
+
         # VoxCPM2 грузится ~1.5 мин: греем на старте, а не в первой реплике
         warm = getattr(tts, "warmup", None)
         if warm:
-            import asyncio
-
             asyncio.create_task(warm())
+        if memory is None:
+            return
+        asyncio.create_task(memory.sync.pusher_loop())
+
+        async def _memory_loop():
+            from datetime import datetime
+
+            while True:
+                await asyncio.sleep(30)
+                if memory.condenser.should_run(app.state.last_activity,
+                                               time.time()):
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    try:
+                        await memory.condenser.run_once(today)
+                    except Exception as exc:
+                        print(f"[nova] конденсер: {exc!r}")
+
+        asyncio.create_task(_memory_loop())
 
     @app.get("/health")
     def health():
@@ -146,11 +195,13 @@ def create_app(
 
         session = Session(
             send=send, engine=engine, asr=asr, llm=llm, tts=tts,
-            feedback_path=feedback_path,
+            feedback_path=feedback_path, memory=memory,
         )
         await send(HelloAck(mock=mock))
         app.state.clients += 1
         app.state.last_activity = time.time()
+        if memory:
+            memory.store.append_event("клиент подключился")
         try:
             while True:
                 msg = parse_client_message(await ws.receive_text())
@@ -161,6 +212,9 @@ def create_app(
         finally:
             app.state.clients -= 1
             app.state.last_activity = time.time()
+            if memory:
+                memory.store.append_event("клиент отключился")
+                memory.sync.request_push()
 
     return app
 

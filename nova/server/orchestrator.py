@@ -38,6 +38,17 @@ def wants_screen(text: str) -> bool:
     return any(w in t for w in _SCREEN_WORDS)
 
 
+class Memory:
+    """Связка памяти для сессии: хранилище, конденсер, git-синк, пульс."""
+
+    def __init__(self, store, condenser=None, sync=None,
+                 chronicle_s: float = 10.0):
+        self.store = store
+        self.condenser = condenser
+        self.sync = sync
+        self.chronicle_s = chronicle_s
+
+
 class Session:
     def __init__(
         self,
@@ -48,8 +59,11 @@ class Session:
         tts: TTSModel,
         feedback_path: Path | None = None,
         tts_timeout_s: float = 90.0,
+        memory: Memory | None = None,
     ):
         self._tts_timeout_s = tts_timeout_s
+        self._memory = memory
+        self._last_chronicle = 0.0
         self._send = send
         self._engine = engine
         self._asr = asr
@@ -65,6 +79,7 @@ class Session:
     async def handle(self, msg) -> None:
         if isinstance(msg, Frame):
             self._frames.append(base64.b64decode(msg.jpeg_b64))
+            await self._chronicle_pulse()
         elif isinstance(msg, AudioSegment):
             try:
                 text = await self._asr.transcribe(base64.b64decode(msg.pcm_b64), msg.sample_rate)
@@ -72,7 +87,8 @@ class Session:
                     # виспер нагаллюцинировал на бормотании — пусть переспросит
                     text = "(неразборчивое бормотание)"
                 frames = list(self._frames) if wants_screen(text) else []
-                reply = await self._llm.reply_to_user(text, frames, list(self._history))
+                text_llm = self._with_memories(text)
+                reply = await self._llm.reply_to_user(text_llm, frames, list(self._history))
             except Exception as exc:
                 print(f"[nova] ошибка модели (reply): {exc!r}")
                 return
@@ -81,6 +97,10 @@ class Session:
             # ремарки из прошлых реплик и злоупотребляет ими
             self._history.append({"role": "user", "content": text})
             self._history.append({"role": "assistant", "content": strip_markers(reply)})
+            if self._memory:
+                self._memory.store.append_reply("NOVA", strip_markers(reply))
+                if self._memory.sync:
+                    self._memory.sync.request_push()
             await self._speak(reply, reason="reply", heard=text)
         elif isinstance(msg, DetectorEvent):
             decision = self._engine.on_event(msg.event, now=time.time())
@@ -88,6 +108,42 @@ class Session:
                 await self._comment(msg.event, reason="proactive")
         elif isinstance(msg, Hotkey):
             await self._handle_hotkey(msg)
+
+    def _with_memories(self, text: str) -> str:
+        """Дневник + вспоминание: по вопросу (ур.1) или ассоциативно (ур.1.5).
+        Вставка уходит только мозгу; история и дневник хранят чистый текст."""
+        mem = self._memory
+        if not mem:
+            return text
+        if mem.condenser:
+            mem.condenser.interrupt()  # реплика Джея всегда главнее сжатия
+        mem.store.append_reply("Джей", text)
+        from nova.server.memory.recall import (
+            associate, keywords, recall, wants_recall,
+        )
+        today = time.strftime("%Y-%m-%d")
+        rec = recall(mem.store, text, today) if wants_recall(text) else ""
+        if not rec:
+            ctx = keywords(text) + keywords(mem.store._last_seen)
+            rec = associate(mem.store, ctx, today, cooldown_days=int(
+                os.environ.get("NOVA_RECALL_COOLDOWN_D", "5")))
+        return f"{rec}\n{text}" if rec else text
+
+    async def _chronicle_pulse(self) -> None:
+        """Летопись по пульсу: раз в chronicle_s глаза описывают свежий
+        кадр; запись в дневник делает on_seen-хук глаз (см. main)."""
+        if not self._memory or not self._frames:
+            return
+        if time.time() - self._last_chronicle < self._memory.chronicle_s:
+            return
+        describe = getattr(self._llm, "describe", None)
+        if describe is None:
+            return
+        self._last_chronicle = time.time()
+        try:
+            await describe([self._frames[-1]])
+        except Exception as exc:
+            print(f"[nova] летопись: {exc!r}")
 
     async def _handle_hotkey(self, msg: Hotkey) -> None:
         if msg.action == "comment_now":
@@ -112,6 +168,10 @@ class Session:
             return
         print(f"[nova] comment: {comment!r}")
         self._history.append({"role": "assistant", "content": strip_markers(comment)})
+        if self._memory:
+            self._memory.store.append_reply("NOVA", strip_markers(comment))
+            if self._memory.sync:
+                self._memory.sync.request_push()
         await self._speak(comment, reason=reason)
 
     def _write_feedback(self, direction: str) -> None:

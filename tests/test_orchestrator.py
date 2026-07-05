@@ -212,3 +212,114 @@ async def test_feedback_written_to_jsonl(tmp_path):
     rec = json.loads(lines[0])
     assert rec["direction"] == "up"
     assert rec["text"]  # текст последней реплики
+
+
+# ---- память (этап 3А) ----
+
+class FixedASR(ASRModel):
+    def __init__(self, text):
+        self._text = text
+
+    async def transcribe(self, pcm, sample_rate):
+        return self._text
+
+
+def _audio_msg():
+    return AudioSegment(ts=1.0, pcm_b64=base64.b64encode(b"\x00\x00" * 160).decode(),
+                        sample_rate=16000)
+
+
+def _frame_msg():
+    return Frame(ts=1.0, jpeg_b64=base64.b64encode(b"fakejpeg").decode())
+
+
+async def test_memory_writes_dialog_and_recall(tmp_path):
+    import time as _t
+
+    from nova.server.memory.store import MemoryStore
+    from nova.server.orchestrator import Memory
+
+    st = MemoryStore(tmp_path)
+    # старый день с Джеффом — для вспоминания
+    ts = _t.mktime((2026, 6, 20, 21, 0, 0, 0, 0, -1))
+    st.append_seen("Джефф съел троих на турнире", ts=ts)
+    st.set_index_line("2026-06-20", "2026-06-20 ★: Джефф | сущности: Джефф")
+
+    llm = RecordingLLM(reply="Помню, конечно!")
+    sent = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    session = Session(
+        send=send,
+        engine=ProactiveEngine(cooldown_s=0.0, talkativeness=0.0, dedupe_window_s=0.0),
+        asr=FixedASR("помнишь как Джефф съел троих?"),
+        llm=llm, tts=MockTTS(),
+        memory=Memory(store=st),
+    )
+    await session.handle(_audio_msg())
+    day = st.read_day(_t.strftime("%Y-%m-%d"))
+    assert "[Джей] помнишь как Джефф съел троих?" in day
+    assert "[NOVA] Помню, конечно!" in day
+    # recall вшит в текст для мозга
+    assert "[из дневника за 2026-06-20" in llm.calls[0][1]
+    # а в историю ушёл чистый вопрос, без вставки
+    assert session._history[0]["content"] == "помнишь как Джефф съел троих?"
+
+
+async def test_chronicle_pulse_throttles(tmp_path):
+    from nova.server.memory.store import MemoryStore
+    from nova.server.orchestrator import Memory
+
+    calls = []
+
+    class EyesLLM(RecordingLLM):
+        async def describe(self, frames):
+            calls.append(1)
+            return "экран"
+
+    st = MemoryStore(tmp_path)
+    sent = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    session = Session(
+        send=send,
+        engine=ProactiveEngine(cooldown_s=999.0, talkativeness=0.0, dedupe_window_s=0.0),
+        asr=MockASR(), llm=EyesLLM(), tts=MockTTS(),
+        memory=Memory(store=st, chronicle_s=10.0),
+    )
+    await session.handle(_frame_msg())          # первый кадр — описали
+    await session.handle(_frame_msg())          # сразу второй — пульс молчит
+    assert calls == [1]
+    session._last_chronicle -= 11               # «прошло» 11 секунд
+    await session.handle(_frame_msg())
+    assert calls == [1, 1]
+
+
+async def test_memory_condenser_interrupted_by_reply(tmp_path):
+    from nova.server.memory.store import MemoryStore
+    from nova.server.orchestrator import Memory
+
+    interrupted = []
+
+    class FakeCondenser:
+        def interrupt(self):
+            interrupted.append(1)
+
+    st = MemoryStore(tmp_path)
+    sent = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    session = Session(
+        send=send,
+        engine=ProactiveEngine(cooldown_s=0.0, talkativeness=0.0, dedupe_window_s=0.0),
+        asr=FixedASR("привет"), llm=RecordingLLM(), tts=MockTTS(),
+        memory=Memory(store=st, condenser=FakeCondenser()),
+    )
+    await session.handle(_audio_msg())
+    assert interrupted == [1]                   # реплика прервала сжатие
