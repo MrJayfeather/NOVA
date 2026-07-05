@@ -14,6 +14,9 @@ export NOVA_FISH_CKPT=${NOVA_FISH_CKPT:-/workspace/checkpoints/openaudio-s1-mini
 [ -f /workspace/fish_key ] && export NOVA_FISH_KEY=$(cat /workspace/fish_key)
 # облачные глаза: ключ кладётся в /workspace/gemini_key (не в git!)
 [ -f /workspace/gemini_key ] && export GEMINI_KEY=$(cat /workspace/gemini_key)
+# env запечён при создании инстанса — файлы переопределяют без пересоздания
+[ -f /workspace/nova_tts ] && export NOVA_TTS=$(cat /workspace/nova_tts)
+[ -f /workspace/nova_eyes ] && export NOVA_EYES=$(cat /workspace/nova_eyes)
 [ -f /workspace/hf_token ] && export HF_TOKEN=$(cat /workspace/hf_token)
 export LD_LIBRARY_PATH="$(python3 -c 'import nvidia.cudnn; print(list(nvidia.cudnn.__path__)[0] + "/lib")'):$LD_LIBRARY_PATH"
 
