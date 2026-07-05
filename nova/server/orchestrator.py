@@ -14,8 +14,8 @@ from nova.server.tts_text import (
     asr_garbage, drop_leading_sounds, normalize_for_tts, strip_markers,
 )
 from nova.shared.protocol import (
-    AudioChunk, AudioSegment, DetectorEvent, Frame, Hotkey,
-    SpeakEnd, SpeakStart,
+    AudioChunk, AudioSegment, CinemaMode, Clip, DetectorEvent, Frame,
+    Hotkey, SpeakEnd, SpeakStart,
 )
 
 Send = Callable[[object], Awaitable[None]]
@@ -36,6 +36,23 @@ _SCREEN_WORDS = (
 def wants_screen(text: str) -> bool:
     t = text.lower()
     return any(w in t for w in _SCREEN_WORDS)
+
+
+# кино-режим голосом: только устойчивые формы — одиночное «смотри,»
+# не триггер («смотри, какой анлак!» не должно включать кино)
+_CINEMA_ON = ("смотрим фильм", "смотрим кино", "смотрим видос",
+              "давай смотреть", "смотри внимательно", "следи за экраном")
+_CINEMA_OFF = ("хватит смотреть", "не смотри", "можешь расслабиться",
+               "можешь не смотреть")
+
+
+def cinema_command(text: str) -> bool | None:
+    t = text.lower()
+    if any(w in t for w in _CINEMA_OFF):
+        return False
+    if any(w in t for w in _CINEMA_ON):
+        return True
+    return None
 
 
 class Memory:
@@ -71,6 +88,7 @@ class Session:
         self._tts = tts
         self._feedback_path = feedback_path
         self._frames: deque[bytes] = deque(maxlen=8)
+        self._last_clip = ""
         # история текстовая (кадры в неё не пишутся), поэтому дешёвая:
         # 100 реплик ~ 4к токенов из 16к окна
         self._history: deque[dict] = deque(maxlen=100)
@@ -86,8 +104,23 @@ class Session:
                 if asr_garbage(text):
                     # виспер нагаллюцинировал на бормотании — пусть переспросит
                     text = "(неразборчивое бормотание)"
+                cmd = cinema_command(text)
+                if cmd is not None:
+                    # команда взгляда перехватывается ДО мозга
+                    await self._send(CinemaMode(on=cmd))
+                    if self._memory:
+                        self._memory.store.append_event(
+                            f"кино-режим {'вкл' if cmd else 'выкл'} голосом")
+                    await self._speak(
+                        "Смотрю во все глаза!" if cmd else "Ладно, расслабляюсь.",
+                        reason="reply", heard=text)
+                    return
                 frames = list(self._frames) if wants_screen(text) else []
                 text_llm = self._with_memories(text)
+                if frames and self._last_clip:
+                    # вопрос «что происходит?» отвечается и по движухе;
+                    # вставка — только мозгу (дневник/история чистые)
+                    text_llm = f"[последний клип: {self._last_clip}]\n{text_llm}"
                 reply = await self._llm.reply_to_user(text_llm, frames, list(self._history))
             except Exception as exc:
                 print(f"[nova] ошибка модели (reply): {exc!r}")
@@ -102,6 +135,17 @@ class Session:
                 if self._memory.sync:
                     self._memory.sync.request_push()
             await self._speak(reply, reason="reply", heard=text)
+        elif isinstance(msg, Clip):
+            describe = getattr(self._llm, "describe_clip", None)
+            if describe is None:
+                return
+            summary = await describe(base64.b64decode(msg.mp4_b64))
+            if not summary:
+                return
+            self._last_clip = summary
+            decision = self._engine.on_event("clip", now=time.time())
+            if decision.speak:
+                await self._comment(f"клип: {summary}", reason="proactive")
         elif isinstance(msg, DetectorEvent):
             decision = self._engine.on_event(msg.event, now=time.time())
             if decision.speak:

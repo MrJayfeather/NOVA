@@ -15,6 +15,13 @@ DESCRIBE_PROMPT = (
     "Если кадр почти не отличается от предыдущего — пиши «N: то же». {prev}"
 )
 
+CLIP_PROMPT = (
+    "Это видеоклип с экрана пользователя (движуха/кино-режим). Разбери "
+    "по таймштампам: кто что сделал, что произошло, ЧТО СКАЗАЛИ (если "
+    "есть звук — реплики важны), счёт/итоги. По-русски, фактами, "
+    "3-6 строк. {hint}"
+)
+
 QUESTION_PROMPT = (
     "Это кадр экрана пользователя, снятый В МОМЕНТ его вопроса — текущее "
     "состояние, прямо сейчас. Пользователь спросил: «{q}». Опиши по-русски "
@@ -44,10 +51,15 @@ class GeminiEyes(VisionLLM):
             base_url=GEMINI_URL, timeout=timeout,
             headers={"x-goog-api-key": api_key})
 
-    async def _call_gemini(self, frames: list[bytes], prompt: str) -> str:
+    async def _call_gemini(self, frames: list[bytes], prompt: str,
+                           video: bytes | None = None) -> str:
         parts = [{"inline_data": {"mime_type": "image/jpeg",
                                   "data": base64.b64encode(f).decode()}}
                  for f in frames]
+        if video is not None:
+            parts.append({"inline_data": {
+                "mime_type": "video/mp4",
+                "data": base64.b64encode(video).decode()}})
         parts.append({"text": prompt})
         r = await self._client.post(
             f"/models/{self._model}:generateContent",
@@ -105,6 +117,18 @@ class GeminiEyes(VisionLLM):
     async def complete_text(self, prompt: str) -> str:
         """Текстовый вызов без кадров — резервный конденсер памяти."""
         return await self._call_gemini([], prompt)
+
+    async def describe_clip(self, mp4: bytes, hint: str = "") -> str:
+        """Видео-взгляд: клип экрана -> сводка с таймштампами (и звуком)."""
+        try:
+            out = await self._call_gemini(
+                [], CLIP_PROMPT.format(hint=hint), video=mp4)
+        except Exception as exc:
+            print(f"[nova] глаза-видео недоступны: {exc!r}")
+            return ""
+        if self.on_seen and out:
+            self.on_seen(out)
+        return out
 
     async def reply_to_user(
         self, text: str, frames: list[bytes], history: list[dict]

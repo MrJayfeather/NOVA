@@ -323,3 +323,66 @@ async def test_memory_condenser_interrupted_by_reply(tmp_path):
     )
     await session.handle(_audio_msg())
     assert interrupted == [1]                   # реплика прервала сжатие
+
+
+# ---- со-просмотр (этап 3В) ----
+
+async def test_cinema_voice_command_toggles():
+    from nova.shared.protocol import CinemaMode
+
+    sent = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    llm = RecordingLLM()
+    session = Session(
+        send=send,
+        engine=ProactiveEngine(cooldown_s=0.0, talkativeness=0.0,
+                               dedupe_window_s=0.0),
+        asr=FixedASR("Нова, смотрим фильм"), llm=llm, tts=MockTTS(),
+    )
+    await session.handle(_audio_msg())
+    modes = [m for m in sent if isinstance(m, CinemaMode)]
+    assert modes and modes[0].on is True
+    assert llm.calls == []      # мозг НЕ вызывался — команда до него
+    starts = [m for m in sent if isinstance(m, SpeakStart)]
+    assert starts               # подтвердила голосом
+
+
+async def test_clip_message_becomes_seen_and_comment_material():
+    import base64 as b64
+
+    from nova.shared.protocol import Clip
+
+    class ClipEyes(RecordingLLM):
+        async def describe_clip(self, mp4, hint=""):
+            return "0:05 замес, Джефф съел троих"
+
+    llm = ClipEyes(comment="Ого, вот это замес!")
+    sent = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    session = Session(
+        send=send,
+        engine=ProactiveEngine(cooldown_s=0.0, talkativeness=1.0,
+                               dedupe_window_s=0.0),
+        asr=MockASR(), llm=llm, tts=MockTTS(),
+    )
+    await session.handle(Clip(ts=1.0, mp4_b64=b64.b64encode(b"MP4").decode(),
+                              dur_s=15.0, audio=True))
+    assert session._last_clip.startswith("0:05")
+    starts = [m for m in sent if isinstance(m, SpeakStart)]
+    assert starts and starts[0].reason == "proactive"
+
+
+def test_cinema_command_detection():
+    from nova.server.orchestrator import cinema_command
+
+    assert cinema_command("давай смотрим фильм") is True
+    assert cinema_command("смотри внимательно") is True
+    assert cinema_command("хватит смотреть") is False
+    assert cinema_command("смотри, какой анлак!") is None
+    assert cinema_command("как дела?") is None

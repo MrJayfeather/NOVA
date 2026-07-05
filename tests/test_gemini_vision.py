@@ -118,3 +118,22 @@ def test_wrap_eyes_modes():
                              "NOVA_EYES": "local"}) is inner  # выключено
     wrapped = wrap_eyes(inner, {"GEMINI_KEY": "k"})
     assert isinstance(wrapped, GeminiEyes)                    # дефолт gemini
+
+
+async def test_describe_clip_sends_video_and_logs_seen():
+    eyes = make_eyes(FakeInner())
+    parts_seen = {}
+
+    async def fake_call(frames, prompt, video=None):
+        parts_seen["video"] = video
+        parts_seen["prompt"] = prompt
+        return "0:03 Джефф съел троих"
+
+    eyes._call_gemini = fake_call
+    seen = []
+    eyes.on_seen = seen.append
+    out = await eyes.describe_clip(b"MP4DATA", hint="матч Rivals")
+    assert "Джефф" in out
+    assert parts_seen["video"] == b"MP4DATA"
+    assert "Rivals" in parts_seen["prompt"]
+    assert seen == ["0:03 Джефф съел троих"]
