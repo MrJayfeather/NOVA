@@ -201,6 +201,12 @@ class VoxTTS(TTSModel):
         self._gen_lock = asyncio.Lock()  # GPU-генерация строго по одному
 
     def _load_sync(self) -> None:
+        # DFN тянет numpy 1.26, где выпилены старые алиасы, а зависимости
+        # voxcpm/ruaccent местами зовут np.long и др. — возвращаем шимом
+        for old, new in (("long", np.int64), ("int", int), ("float", float),
+                         ("bool", bool), ("object", object)):
+            if not hasattr(np, old):
+                setattr(np, old, new)
         from voxcpm import VoxCPM
 
         self._model = VoxCPM.from_pretrained(
