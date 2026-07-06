@@ -181,6 +181,36 @@ def _load_dfn():
     return run
 
 
+def trim_edge_silence(pcm: np.ndarray, rate: int,
+                      keep: float = 0.15) -> np.ndarray:
+    """Мёртвый воздух по краям куска — долой (склейка предложений без
+    провалов); keep секунд тишины оставляем как естественный вдох."""
+    if not len(pcm):
+        return pcm
+    amp = np.abs(pcm)
+    thresh = max(500, int(amp.max() * 0.02))
+    idx = np.where(amp > thresh)[0]
+    if not len(idx):
+        return pcm
+    pad = int(keep * rate)
+    return pcm[max(0, int(idx[0]) - pad):
+               min(len(pcm), int(idx[-1]) + 1 + pad)]
+
+
+def merge_lone_markers(sentences: list[str]) -> list[str]:
+    """Предложение из одних маркеров само не звучит: клеим его эмоцию
+    к следующему, хвостовое — выбрасываем."""
+    out: list[str] = []
+    carry = ""
+    for s in sentences:
+        if not strip_markers(s).strip():
+            carry = f"{carry} {s}".strip()
+            continue
+        out.append(f"{carry} {s}".strip() if carry else s)
+        carry = ""
+    return out
+
+
 def stretch_pauses(pcm: np.ndarray, rate: int, factor: float = 2.0,
                    min_gap_s: float = 0.12) -> np.ndarray:
     """Замедление без артефактов: удлиняем ТОЛЬКО тишину между словами,
@@ -219,7 +249,7 @@ class VoxTTS(TTSModel):
     def __init__(self, reference_wav: Path, reference_text: str,
                  tag: str = DEFAULT_TAG, stress: bool = False, seed: int = 42,
                  word_timestamps=None, check_speech: bool = True,
-                 pause_factor: float = 2.0, use_dfn: bool = True,
+                 pause_factor: float = 1.0, use_dfn: bool = True,
                  emo_refs: dict | None = None):
         # word_timestamps(pcm, rate) -> [(слово, старт_с)] — один прогон
         # whisper на предложение: и срез шапки, и СТТ-страж по нему же
@@ -300,6 +330,8 @@ class VoxTTS(TTSModel):
         async with self._gen_lock:
             pcm = await asyncio.to_thread(self._gen_sync, prepared, seed,
                                           ref_wav, ref_text)
+        # до whisper, чтобы таймштампы совпадали с финальным аудио
+        pcm = trim_edge_silence(pcm, self.sample_rate)
         cut = 0.0
         words: list[tuple[str, float]] = []
         need_whisper = self._timestamps and (self._tag or self._check_speech)
@@ -370,7 +402,7 @@ class VoxTTS(TTSModel):
                 await asyncio.to_thread(self._load_sync)
         # маркеры остаются в предложениях до выбора эмо-референса;
         # prepare() уберёт их перед синтезом
-        sentences = split_for_tts(text)[:20]
+        sentences = merge_lone_markers(split_for_tts(text))[:20]
         # конвейер внахлёст: GPU-генерация по одному (gen_lock), но пока
         # предложение идёт через whisper — следующее уже генерится
         tasks = [asyncio.create_task(self._sentence_checked(s))
@@ -406,6 +438,8 @@ def build_vox_tts(asr, ref_dir: Path) -> VoxTTS:
         seed=int(os.environ.get("NOVA_VOX_SEED", "42")),
         word_timestamps=asr.word_timestamps,
         check_speech=os.environ.get("NOVA_TTS_GUARD", "1") == "1",
-        pause_factor=float(os.environ.get("NOVA_VOX_PAUSES", "2.0")),
+        # растяжка выключена: идеал (emo_base) генерился без неё, темп
+        # держит сам референс; вернуть можно NOVA_VOX_PAUSES=2.0
+        pause_factor=float(os.environ.get("NOVA_VOX_PAUSES", "1.0")),
         use_dfn=os.environ.get("NOVA_VOX_DFN", "1") == "1",
     )

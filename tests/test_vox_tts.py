@@ -363,3 +363,55 @@ def test_apply_stress_fixes():
 def test_prepare_applies_stress_fixes_without_ruaccent():
     tts = make_vox(tag="", accents=None)
     assert tts.prepare("Под присмотром.") == "Под присмо́тром."
+
+
+# ---- разрывная речь: без растяжки пауз, тишина на стыках срезается ----
+
+def test_trim_edge_silence_cuts_dead_air():
+    from nova.server.models.vox_tts import trim_edge_silence
+
+    rate = 100
+    pcm = np.concatenate([
+        np.zeros(80, dtype=np.int16),            # 0.8с тишины в начале
+        np.full(100, 9000, dtype=np.int16),      # 1с речи
+        np.zeros(120, dtype=np.int16),           # 1.2с тишины в конце
+    ])
+    out = trim_edge_silence(pcm, rate, keep=0.15)
+    # осталось: 0.15с + 1с + 0.15с = 130 сэмплов
+    assert len(out) == 130
+    assert out[20] == 9000
+
+
+def test_trim_edge_silence_keeps_silent_and_short():
+    from nova.server.models.vox_tts import trim_edge_silence
+
+    silent = np.zeros(100, dtype=np.int16)
+    assert len(trim_edge_silence(silent, 100)) == 100  # вся тишина — не трогаем
+    tight = np.full(50, 9000, dtype=np.int16)
+    assert len(trim_edge_silence(tight, 100)) == 50    # нечего резать
+
+
+def test_merge_lone_markers():
+    from nova.server.models.vox_tts import merge_lone_markers
+
+    # одинокий маркер приклеивается к следующему предложению
+    assert merge_lone_markers(["[laughing]", "Ну ты дал."]) == \
+        ["[laughing] Ну ты дал."]
+    # хвостовой одинокий маркер выбрасывается
+    assert merge_lone_markers(["Всё, довольен?", "[laughing]"]) == \
+        ["Всё, довольен?"]
+    assert merge_lone_markers(["Привет."]) == ["Привет."]
+
+
+async def test_synthesize_skips_marker_only_sentence():
+    tts = make_vox(tag="")
+    calls = []
+
+    def fake_gen(prepared, seed, *a):
+        calls.append(prepared)
+        return np.full(10, 500, dtype=np.int16)
+
+    tts._gen_sync = fake_gen
+    chunks = [c async for c in tts.synthesize("Всё, довольен? [laughing]")]
+    assert len(chunks) == 1
+    assert calls == ["Всё, довольен?"]   # пустышка в модель не ушла
