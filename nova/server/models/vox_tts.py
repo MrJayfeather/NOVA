@@ -15,6 +15,23 @@ from nova.server.tts_text import speech_matches, strip_markers
 # растяжка пауз. Тег оставлен как выключенная опция: наговаривал шапку.
 DEFAULT_TAG = ""
 
+# Эмоции БЕЗ тегов: маркер мозга -> свой референс (отслушано: «супер,
+# шикарно»). Ключи — группы маркеров персоны, значения — имя референса.
+MARKER_EMOTIONS = {
+    "laughing": "joy", "chuckling": "joy", "excited": "joy",
+    "surprised": "joy",
+    "sarcastic": "tease", "curious": "tease",
+    "whispering": "soft", "soft tone": "soft", "sighing": "soft",
+}
+
+
+def emotion_for(sentence: str) -> str | None:
+    """Первый известный маркер предложения -> имя эмо-референса."""
+    for m in re.findall(r"\[([a-z ]+)\]", sentence.lower()):
+        if m in MARKER_EMOTIONS:
+            return MARKER_EMOTIONS[m]
+    return None
+
 _VOWELS = "аеёиоуыэюяАЕЁИОУЫЭЮЯ"
 
 
@@ -182,7 +199,8 @@ class VoxTTS(TTSModel):
     def __init__(self, reference_wav: Path, reference_text: str,
                  tag: str = DEFAULT_TAG, stress: bool = True, seed: int = 42,
                  word_timestamps=None, check_speech: bool = True,
-                 pause_factor: float = 2.0, use_dfn: bool = True):
+                 pause_factor: float = 2.0, use_dfn: bool = True,
+                 emo_refs: dict | None = None):
         # word_timestamps(pcm, rate) -> [(слово, старт_с)] — один прогон
         # whisper на предложение: и срез шапки, и СТТ-страж по нему же
         self._ref_wav = str(reference_wav)
@@ -195,6 +213,8 @@ class VoxTTS(TTSModel):
         self._pause_factor = pause_factor
         self._use_dfn = use_dfn
         self._dfn = None
+        # имя эмоции -> (путь wav, транскрипт): [laughing] бодрит референс
+        self._emo_refs = emo_refs or {}
         self._model = None
         self._accents = None
         self._lock = asyncio.Lock()
@@ -237,20 +257,29 @@ class VoxTTS(TTSModel):
             s = stress_to_acute(self._accents.process_all(s))
         return self._tag + s if self._tag else s
 
-    def _gen_sync(self, prepared: str, seed: int) -> np.ndarray:
+    def _gen_sync(self, prepared: str, seed: int,
+                  ref_wav: str | None = None,
+                  ref_text: str | None = None) -> np.ndarray:
         import torch
 
         torch.manual_seed(seed)
         wav = self._model.generate(
-            text=prepared, prompt_wav_path=self._ref_wav,
-            prompt_text=self._ref_text, reference_wav_path=self._ref_wav)
+            text=prepared,
+            prompt_wav_path=ref_wav or self._ref_wav,
+            prompt_text=ref_text or self._ref_text,
+            reference_wav_path=ref_wav or self._ref_wav)
         arr = np.asarray(wav, dtype=np.float32) * 32767.0
         return arr.clip(-32768, 32767).astype(np.int16)
 
     async def _sentence_pcm(self, sentence: str, seed: int) -> bytes:
         prepared = self.prepare(sentence)
+        # эмоция предложения выбирает референс (маркер мозга -> голос)
+        emo = emotion_for(sentence)
+        ref_wav, ref_text = self._emo_refs.get(
+            emo, (self._ref_wav, self._ref_text))
         async with self._gen_lock:
-            pcm = await asyncio.to_thread(self._gen_sync, prepared, seed)
+            pcm = await asyncio.to_thread(self._gen_sync, prepared, seed,
+                                          ref_wav, ref_text)
         cut = 0.0
         words: list[tuple[str, float]] = []
         need_whisper = self._timestamps and (self._tag or self._check_speech)
@@ -319,7 +348,9 @@ class VoxTTS(TTSModel):
         async with self._lock:
             if self._model is None:
                 await asyncio.to_thread(self._load_sync)
-        sentences = split_for_tts(strip_markers(text))[:20]
+        # маркеры остаются в предложениях до выбора эмо-референса;
+        # prepare() уберёт их перед синтезом
+        sentences = split_for_tts(text)[:20]
         # конвейер внахлёст: GPU-генерация по одному (gen_lock), но пока
         # предложение идёт через whisper — следующее уже генерится
         tasks = [asyncio.create_task(self._sentence_checked(s))
@@ -338,7 +369,14 @@ def build_vox_tts(asr, ref_dir: Path) -> VoxTTS:
     if not ref.exists():
         ref = ref_dir / "voice_sample.wav"
         ref_txt = ref_dir / "voice_sample.txt"
+    emo_refs = {}
+    for name in ("joy", "tease", "soft"):
+        w = ref_dir / f"voice_{name}.wav"
+        t = ref_dir / f"voice_{name}.txt"
+        if w.exists() and t.exists():
+            emo_refs[name] = (str(w), t.read_text(encoding="utf-8").strip())
     return VoxTTS(
+        emo_refs=emo_refs,
         reference_wav=ref,
         reference_text=ref_txt.read_text(encoding="utf-8").strip(),
         tag=os.environ.get("NOVA_VOX_TAG", DEFAULT_TAG),

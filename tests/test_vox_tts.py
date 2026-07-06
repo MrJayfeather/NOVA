@@ -88,6 +88,7 @@ def make_vox(**kw):
     tts._use_dfn = False
     tts._dfn = kw.get("dfn")
     tts._model = object()   # «загружена»
+    tts._emo_refs = kw.get("emo_refs", {})
     tts._accents = kw.get("accents")
     tts.sample_rate = 100
     tts._lock = asyncio.Lock()
@@ -118,7 +119,7 @@ async def test_synthesize_sequential_cut_and_normalize():
 
     tts = make_vox(word_timestamps=stamps, tag="(slow)")
 
-    def fake_gen(prepared, seed):
+    def fake_gen(prepared, seed, *a):
         calls.append((prepared, seed))
         return np.full(300, 100, dtype=np.int16)  # 3 «секунды» при rate=100
 
@@ -145,7 +146,7 @@ async def test_guard_fail_regenerates_with_new_seed():
 
     tts = make_vox(word_timestamps=stamps, tag="", check_speech=True)
 
-    def fake_gen(prepared, seed):
+    def fake_gen(prepared, seed, *a):
         seeds.append(seed)
         return np.full(10, 500, dtype=np.int16)
 
@@ -158,7 +159,7 @@ async def test_guard_fail_regenerates_with_new_seed():
 async def test_failed_sentence_skipped_not_fatal():
     n = [0]
 
-    def fake_gen(prepared, seed):
+    def fake_gen(prepared, seed, *a):
         n[0] += 1
         if n[0] == 1:
             raise RuntimeError("модель икнула")
@@ -206,7 +207,7 @@ async def test_head_miss_falls_back_to_silence_then_skip():
         np.zeros(50, dtype=np.int16),
         np.full(200, 9000, dtype=np.int16),
     ])
-    tts._gen_sync = lambda prepared, seed: with_gap
+    tts._gen_sync = lambda prepared, seed, *a: with_gap
     chunks = [c async for c in tts.synthesize("Привет.")]
     assert len(chunks) == 1
     # срезано по паузе: осталась только реплика (~2с и чуть паузы)
@@ -214,7 +215,7 @@ async def test_head_miss_falls_back_to_silence_then_skip():
 
     # без паузы и без совпадения слов — предложение пропускается целиком
     tts2 = make_vox(word_timestamps=stamps, tag="(slow)")
-    tts2._gen_sync = lambda prepared, seed: np.full(400, 9000, dtype=np.int16)
+    tts2._gen_sync = lambda prepared, seed, *a: np.full(400, 9000, dtype=np.int16)
     chunks2 = [c async for c in tts2.synthesize("Привет.")]
     assert chunks2 == []                           # тишина лучше английского
 
@@ -249,7 +250,7 @@ async def test_dfn_polish_applied_when_loaded():
 
     tts = make_vox(tag="", dfn=fake_dfn)
     tts.sample_rate = 48000
-    tts._gen_sync = lambda prepared, seed: np.full(100, 500, dtype=np.int16)
+    tts._gen_sync = lambda prepared, seed, *a: np.full(100, 500, dtype=np.int16)
     chunks = [c async for c in tts.synthesize("Привет.")]
     assert called == [100]           # полировка прошла по каждому предложению
     assert len(chunks) == 1
@@ -279,7 +280,7 @@ async def test_warmup_loads_and_generates_once():
     gens = []
     tts = make_vox(tag="(slow)")
 
-    def fake_gen(prepared, seed):
+    def fake_gen(prepared, seed, *a):
         gens.append(prepared)
         return np.full(10, 500, dtype=np.int16)
 
@@ -308,3 +309,40 @@ def test_build_vox_tts_reads_env(monkeypatch, tmp_path):
     assert tts._stress is False
     assert tts._seed == 7
     assert tts._check_speech is False
+
+
+# ---- эмоции: референс по маркеру мозга ----
+
+def test_emotion_for_markers():
+    from nova.server.models.vox_tts import emotion_for
+
+    assert emotion_for("[laughing] Ну ты дал!") == "joy"
+    assert emotion_for("[excited] Погнали!") == "joy"
+    assert emotion_for("[sarcastic] Ну конечно.") == "tease"
+    assert emotion_for("[whispering] Тихо...") == "soft"
+    assert emotion_for("[soft tone] Всё хорошо.") == "soft"
+    assert emotion_for("Обычная фраза.") is None
+    # маркер не в начале — тоже считается
+    assert emotion_for("Ага [chuckling] смешно.") == "joy"
+
+
+async def test_synthesize_switches_reference_by_marker(tmp_path):
+    import numpy as np
+
+    joy_ref = tmp_path / "joy.wav"
+    joy_ref.write_bytes(b"RIFF")
+    used_refs = []
+
+    tts = make_vox(tag="")
+    tts._emo_refs = {"joy": (str(joy_ref), "радостный текст")}
+
+    def fake_gen(prepared, seed, ref_wav=None, ref_text=None):
+        used_refs.append(ref_wav)
+        return np.full(10, 500, dtype=np.int16)
+
+    tts._gen_sync = fake_gen
+    chunks = [c async for c in tts.synthesize(
+        "[laughing] Смешно же! Обычное предложение.")]
+    assert len(chunks) == 2
+    assert used_refs[0] == str(joy_ref)      # маркерное — бодрым референсом
+    assert used_refs[1] == "ref.wav"         # обычное — базовым
