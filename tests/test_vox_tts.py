@@ -346,3 +346,20 @@ async def test_synthesize_switches_reference_by_marker(tmp_path):
     assert len(chunks) == 2
     assert used_refs[0] == str(joy_ref)      # маркерное — бодрым референсом
     assert used_refs[1] == "ref.wav"         # обычное — базовым
+
+
+# ---- точечные ударения: свой словарик, знак U+0301, без RUAccent ----
+
+def test_apply_stress_fixes():
+    from nova.server.models.vox_tts import apply_stress_fixes
+
+    assert apply_stress_fixes("под присмотром камер") == \
+        "под присмо́тром камер"
+    assert apply_stress_fixes("Присмотром") == "Присмо́тром"
+    # чужие слова не трогаем, часть слова не матчится
+    assert apply_stress_fixes("присмотрелась") == "присмотрелась"
+
+
+def test_prepare_applies_stress_fixes_without_ruaccent():
+    tts = make_vox(tag="", accents=None)
+    assert tts.prepare("Под присмотром.") == "Под присмо́тром."

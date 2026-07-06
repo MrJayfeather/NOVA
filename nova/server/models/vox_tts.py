@@ -41,6 +41,26 @@ def stress_to_acute(text: str) -> str:
     return re.sub(rf"\+([{_VOWELS}])", "\\1́", text)
 
 
+# Слова, где модель врёт ударение, — с явным знаком U+0301 (тот самый
+# «символ ударения», отслушанный в бенче stress2). Пополняется по мере
+# отлова вживую; авто-RUAccent в рецепт-чемпион НЕ входит.
+STRESS_FIXES = {
+    "присмотром": "присмо́тром",
+}
+_FIXES_RE = re.compile(
+    r"\b(" + "|".join(STRESS_FIXES) + r")\b", re.IGNORECASE)
+
+
+def apply_stress_fixes(text: str) -> str:
+    """Точечные ударения по словарику, регистр первой буквы сохраняем."""
+    def repl(m):
+        w = m.group(0)
+        fix = STRESS_FIXES[w.lower()]
+        return fix[0].upper() + fix[1:] if w[0].isupper() else fix
+
+    return _FIXES_RE.sub(repl, text)
+
+
 def norm_word(w: str) -> str:
     return re.sub(r"[^\wёа-яЁА-Я]", "", w.lower()).replace("ё", "е")
 
@@ -197,7 +217,7 @@ class VoxTTS(TTSModel):
     sample_rate = 48000
 
     def __init__(self, reference_wav: Path, reference_text: str,
-                 tag: str = DEFAULT_TAG, stress: bool = True, seed: int = 42,
+                 tag: str = DEFAULT_TAG, stress: bool = False, seed: int = 42,
                  word_timestamps=None, check_speech: bool = True,
                  pause_factor: float = 2.0, use_dfn: bool = True,
                  emo_refs: dict | None = None):
@@ -252,7 +272,7 @@ class VoxTTS(TTSModel):
                 print(f"[nova] DFN не поднялся, полировка выключена: {exc!r}")
 
     def prepare(self, sentence: str) -> str:
-        s = strip_markers(sentence)
+        s = apply_stress_fixes(strip_markers(sentence))
         if self._accents is not None:
             s = stress_to_acute(self._accents.process_all(s))
         return self._tag + s if self._tag else s
@@ -380,7 +400,9 @@ def build_vox_tts(asr, ref_dir: Path) -> VoxTTS:
         reference_wav=ref,
         reference_text=ref_txt.read_text(encoding="utf-8").strip(),
         tag=os.environ.get("NOVA_VOX_TAG", DEFAULT_TAG),
-        stress=os.environ.get("NOVA_VOX_STRESS", "1") != "0",
+        # авто-RUAccent не в рецепте: идеал отслушан на чистом тексте,
+        # точечные слова правит STRESS_FIXES; включение — NOVA_VOX_STRESS=1
+        stress=os.environ.get("NOVA_VOX_STRESS", "0") == "1",
         seed=int(os.environ.get("NOVA_VOX_SEED", "42")),
         word_timestamps=asr.word_timestamps,
         check_speech=os.environ.get("NOVA_TTS_GUARD", "1") == "1",
