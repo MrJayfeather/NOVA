@@ -54,10 +54,14 @@ if ! curl -s http://127.0.0.1:5000/v1/models > /dev/null \
     EAGER=""
     export NOVA_GPU_UTIL=0.85
   fi
+  # префикс-кэш: system-промпт + память + история (до 100 реплик) общие у
+  # всех запросов сессии — кэш переиспользует их KV и режет время до
+  # первого токена на 60-80% на длинном контексте (диалог как раз такой)
   nohup vllm serve "$NOVA_MODEL" \
     --host 127.0.0.1 --port 5000 --max-model-len 32768 \
     --gpu-memory-utilization "$NOVA_GPU_UTIL" \
     --limit-mm-per-prompt "{\"image\":$NOVA_IMG_LIMIT}" \
+    --enable-prefix-caching \
     $EAGER \
     > /workspace/vllm.log 2>&1 &
 fi
