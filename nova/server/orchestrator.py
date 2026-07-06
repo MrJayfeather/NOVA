@@ -111,6 +111,7 @@ class Session:
             await self._chronicle_pulse()
         elif isinstance(msg, AudioSegment):
             self._last_user_ts = time.time()
+            t0 = time.time()
             try:
                 text = await self._asr.transcribe(base64.b64decode(msg.pcm_b64), msg.sample_rate)
                 if asr_garbage(text):
@@ -127,6 +128,7 @@ class Session:
                         "Смотрю во все глаза!" if cmd else "Ладно, расслабляюсь.",
                         reason="reply", heard=text)
                     return
+                t_asr = time.time()
                 frames = list(self._frames) if wants_screen(text) else []
                 text_llm = self._with_memories(text)
                 if frames and self._last_clip:
@@ -134,9 +136,13 @@ class Session:
                     # вставка — только мозгу (дневник/история чистые)
                     text_llm = f"[последний клип: {self._last_clip}]\n{text_llm}"
                 reply = await self._llm.reply_to_user(text_llm, frames, list(self._history))
+                t_brain = time.time()
             except Exception as exc:
                 print(f"[nova] ошибка модели (reply): {exc!r}")
                 return
+            # секундомер этапов: где реально теряются секунды ответа
+            print(f"[nova] тайминг: asr {t_asr - t0:.1f}с | "
+                  f"глаза+мозг {t_brain - t_asr:.1f}с", flush=True)
             print(f"[nova] reply: {reply!r}")
             # история — чистым текстом, иначе модель копирует свои же
             # ремарки из прошлых реплик и злоупотребляет ими

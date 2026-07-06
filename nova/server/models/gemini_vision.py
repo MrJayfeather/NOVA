@@ -114,6 +114,8 @@ class GeminiEyes(VisionLLM):
         try:
             desc = await self._call_gemini(
                 frames, QUESTION_PROMPT.format(q=question[:300]))
+            # диагностика «глаза наврали или мозг?»: вставка — в лог
+            print(f"[nova] экран->мозг: {desc[:160]!r}")
             if self.on_seen and desc:
                 self.on_seen(desc)
             return desc
