@@ -44,11 +44,21 @@ if ! curl -s http://127.0.0.1:5000/v1/models > /dev/null \
     export NOVA_GPU_UTIL=${NOVA_GPU_UTIL:-0.85}
   fi
   export NOVA_IMG_LIMIT=${NOVA_IMG_LIMIT:-6}
+  # cuda-графы декодят в 2-3× быстрее eager, но профиль-прогон 27B-мультимодалки
+  # жрёт активации и на 48ГБ вылетает по памяти. На карте >=70ГБ места навалом —
+  # включаем графы (главный рычаг задержки на A100/H100) и поднимаем KV-бюджет;
+  # на меньших картах остаёмся в eager, чтобы откат на A6000 не ловил OOM.
+  GPU_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1)
+  EAGER="--enforce-eager"
+  if [ "${GPU_MB:-0}" -ge 70000 ]; then
+    EAGER=""
+    export NOVA_GPU_UTIL=0.85
+  fi
   nohup vllm serve "$NOVA_MODEL" \
     --host 127.0.0.1 --port 5000 --max-model-len 32768 \
     --gpu-memory-utilization "$NOVA_GPU_UTIL" \
     --limit-mm-per-prompt "{\"image\":$NOVA_IMG_LIMIT}" \
-    --enforce-eager \
+    $EAGER \
     > /workspace/vllm.log 2>&1 &
 fi
 
