@@ -31,6 +31,7 @@ def encode_clip(frames: list, fps: int, wav_path: str | None,
     cmd += ["-vf", vf,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf),
             "-pix_fmt", "yuv420p", "-movflags", "+faststart", out_path]
+    p = None
     try:
         p = subprocess.Popen(cmd, stdin=subprocess.PIPE,
                              stderr=subprocess.PIPE)
@@ -39,9 +40,19 @@ def encode_clip(frames: list, fps: int, wav_path: str | None,
                           else np.ascontiguousarray(f).tobytes())
         p.stdin.close()
         p.wait(timeout=60)
+        if p.returncode != 0:
+            err = (p.stderr.read() or b"")[-300:].decode("utf-8", "replace")
+            print(f"[nova] клип: ffmpeg код {p.returncode}: {err}")
         return p.returncode == 0 and Path(out_path).exists()
     except Exception as exc:
-        print(f"[nova] клип: ffmpeg не собрал ({exc!r})")
+        # BrokenPipe = ffmpeg умер раньше кадров; его stderr — причина
+        err = ""
+        if p is not None and p.stderr is not None:
+            try:
+                err = (p.stderr.read() or b"")[-300:].decode("utf-8", "replace")
+            except Exception:
+                pass
+        print(f"[nova] клип: ffmpeg не собрал ({exc!r}) {err}")
         return False
 
 

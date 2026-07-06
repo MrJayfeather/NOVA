@@ -167,6 +167,7 @@ async def hotkey_loop(conn, player: Player, actions: asyncio.Queue, state: dict)
     action_map = {"pause": "toggle_pause"}
     while True:
         action = await actions.get()
+        print(f"[nova] хоткей: {action}")
         if action == "mute":
             player.muted = not player.muted
             print(f"[nova] mute: {player.muted}")

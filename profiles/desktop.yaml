@@ -2,6 +2,6 @@ detector:
   motion_threshold: 12.0
   scene_threshold: 40.0
 proactive:
-  cooldown_s: 20.0
-  talkativeness: 0.6
+  cooldown_s: 45.0
+  talkativeness: 0.45
   dedupe_window_s: 45.0

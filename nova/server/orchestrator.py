@@ -165,6 +165,10 @@ class Session:
             if not summary:
                 return
             self._last_clip = summary
+            # свежесть: пока комменты стояли в очереди, момент мог уйти —
+            # протухший клип живёт в дневнике, но вслух не комментируется
+            if time.time() - msg.ts > 25.0:
+                return
             decision = self._engine.on_event("clip", now=time.time())
             if decision.speak:
                 await self._comment(f"клип: {summary}{self._quiet_hint()}",
