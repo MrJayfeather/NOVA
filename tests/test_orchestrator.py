@@ -371,11 +371,20 @@ async def test_clip_message_becomes_seen_and_comment_material():
                                dedupe_window_s=0.0),
         asr=MockASR(), llm=llm, tts=MockTTS(),
     )
-    await session.handle(Clip(ts=1.0, mp4_b64=b64.b64encode(b"MP4").decode(),
+    import time as _t
+
+    await session.handle(Clip(ts=_t.time(),
+                              mp4_b64=b64.b64encode(b"MP4").decode(),
                               dur_s=15.0, audio=True))
     assert session._last_clip.startswith("0:05")
     starts = [m for m in sent if isinstance(m, SpeakStart)]
     assert starts and starts[0].reason == "proactive"
+    # протухший клип — в дневник, но не в эфир
+    sent.clear()
+    await session.handle(Clip(ts=_t.time() - 60,
+                              mp4_b64=b64.b64encode(b"MP4").decode(),
+                              dur_s=15.0, audio=True))
+    assert [m for m in sent if isinstance(m, SpeakStart)] == []
 
 
 def test_cinema_command_detection():
