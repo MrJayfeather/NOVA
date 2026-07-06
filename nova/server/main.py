@@ -56,8 +56,13 @@ def build_models(mock: bool, persona_prompt: str):
     elif mode == "fishcloud" and os.environ.get("NOVA_FISH_KEY"):
         from nova.server.models.fish_tts import FishTTS
 
+        # облачный fish стабилен — whisper-страж на КАЖДОЕ предложение
+        # только жрёт время: сверка (~0.3с/фраза) плюс ложные пересинтезы
+        # (двойной вызов облака на нормальном голосе). Локальному vox страж
+        # нужен от робо-заскоков, облаку — нет. NOVA_TTS_GUARD=1 вернёт.
+        cloud_guard = _guard if os.environ.get("NOVA_TTS_GUARD") == "1" else None
         tts = FishTTS(
-            validator=_guard,
+            validator=cloud_guard,
             url="https://api.fish.audio/v1/tts",
             api_key=os.environ["NOVA_FISH_KEY"],
             model=os.environ.get("NOVA_FISH_MODEL", "s2.1-pro-free"),
