@@ -203,8 +203,10 @@ class VoxTTS(TTSModel):
     def _load_sync(self) -> None:
         # DFN тянет numpy 1.26, где выпилены старые алиасы, а зависимости
         # voxcpm/ruaccent местами зовут np.long и др. — возвращаем шимом
-        for old, new in (("long", np.int64), ("int", int), ("float", float),
-                         ("bool", bool), ("object", object)):
+        for old, new in (("long", np.int64), ("ulong", np.uint64),
+                         ("uint", np.uint64), ("int", int), ("float", float),
+                         ("bool", bool), ("object", object),
+                         ("unicode", str), ("str", str), ("complex", complex)):
             if not hasattr(np, old):
                 setattr(np, old, new)
         from voxcpm import VoxCPM
