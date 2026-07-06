@@ -211,6 +211,30 @@ def merge_lone_markers(sentences: list[str]) -> list[str]:
     return out
 
 
+def group_takes(sentences: list[str], max_chars: int = 300) -> list[str]:
+    """Дубли как в bench10 (идеальный emo_base — ОДНА генерация всего
+    текста): первое предложение — соло, чтобы голос стартовал быстро,
+    остальные клеятся в цельные дубли — модель ведёт интонацию через
+    предложение, склейки тон не рвут. Новый дубль — при смене эмоции
+    или когда дубль вырос сверх max_chars."""
+    takes: list[str] = []
+    cur, cur_emo = "", None
+    for k, s in enumerate(sentences):
+        emo = emotion_for(s)
+        if k == 0:
+            takes.append(s)
+            continue
+        if cur and emo == cur_emo and len(cur) + len(s) + 1 <= max_chars:
+            cur = f"{cur} {s}"
+        else:
+            if cur:
+                takes.append(cur)
+            cur, cur_emo = s, emo
+    if cur:
+        takes.append(cur)
+    return takes
+
+
 def stretch_pauses(pcm: np.ndarray, rate: int, factor: float = 2.0,
                    min_gap_s: float = 0.12) -> np.ndarray:
     """Замедление без артефактов: удлиняем ТОЛЬКО тишину между словами,
@@ -249,7 +273,7 @@ class VoxTTS(TTSModel):
     def __init__(self, reference_wav: Path, reference_text: str,
                  tag: str = DEFAULT_TAG, stress: bool = False, seed: int = 42,
                  word_timestamps=None, check_speech: bool = True,
-                 pause_factor: float = 1.0, use_dfn: bool = True,
+                 pause_factor: float = 2.0, use_dfn: bool = True,
                  emo_refs: dict | None = None):
         # word_timestamps(pcm, rate) -> [(слово, старт_с)] — один прогон
         # whisper на предложение: и срез шапки, и СТТ-страж по нему же
@@ -359,7 +383,9 @@ class VoxTTS(TTSModel):
             f = pcm.astype(np.float32) / 32768.0
             f = await asyncio.to_thread(self._dfn, f)
             pcm = (f * 32767.0).clip(-32768, 32767).astype(np.int16)
-        out = normalize_peak(pcm).tobytes()
+        # громкость НЕ ровняем по кускам: единый гейн реплики в synthesize
+        # (как в bench10 — иначе тихие дубли «подпрыгивают»)
+        out = pcm.tobytes()
         if self._check_speech and need_whisper:
             # страж по ТОМУ ЖЕ прогону whisper: слова после среза
             heard = " ".join(w for w, t in words if t >= cut)
@@ -403,14 +429,26 @@ class VoxTTS(TTSModel):
         # маркеры остаются в предложениях до выбора эмо-референса;
         # prepare() уберёт их перед синтезом
         sentences = merge_lone_markers(split_for_tts(text))[:20]
+        takes = group_takes(sentences)
         # конвейер внахлёст: GPU-генерация по одному (gen_lock), но пока
-        # предложение идёт через whisper — следующее уже генерится
+        # дубль идёт через whisper — следующий уже генерится
         tasks = [asyncio.create_task(self._sentence_checked(s))
-                 for s in sentences]
+                 for s in takes]
+        gain = None
         for task in tasks:
             pcm = await task
-            if pcm:
-                yield pcm
+            if not pcm:
+                continue
+            arr = np.frombuffer(pcm, dtype=np.int16)
+            peak = int(np.abs(arr).max()) or 1
+            if gain is None:
+                # единый гейн всей реплики по первому дублю: контур
+                # громкости между дублями сохраняется (рецепт bench10)
+                gain = 23000 / peak if peak < 23000 else 1.0
+            g = min(gain, 32000 / peak)   # потолок: без клиппинга
+            arr = (arr.astype(np.float32) * g).clip(
+                -32768, 32767).astype(np.int16)
+            yield arr.tobytes()
 
 
 def build_vox_tts(asr, ref_dir: Path) -> VoxTTS:
@@ -438,8 +476,8 @@ def build_vox_tts(asr, ref_dir: Path) -> VoxTTS:
         seed=int(os.environ.get("NOVA_VOX_SEED", "42")),
         word_timestamps=asr.word_timestamps,
         check_speech=os.environ.get("NOVA_TTS_GUARD", "1") == "1",
-        # растяжка выключена: идеал (emo_base) генерился без неё, темп
-        # держит сам референс; вернуть можно NOVA_VOX_PAUSES=2.0
-        pause_factor=float(os.environ.get("NOVA_VOX_PAUSES", "1.0")),
+        # растяжка ×2 как в bench10 (emo_base): только вдохи ВНУТРИ дубля,
+        # края не трогаются — на склейках она не работает
+        pause_factor=float(os.environ.get("NOVA_VOX_PAUSES", "2.0")),
         use_dfn=os.environ.get("NOVA_VOX_DFN", "1") == "1",
     )
