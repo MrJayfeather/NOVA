@@ -23,7 +23,9 @@ class VADSegmenter:
         self,
         vad: VAD,
         chunk_ms: int = 32,
-        silence_end_ms: int = 608,
+        # 0.6с обрывал мысль на задумчивой паузе («говорю, задумался —
+        # она уже отвечает на огрызок»); 1.4с дослушивает по-человечески
+        silence_end_ms: int = 1408,
         max_segment_s: float = 15.0,
         pre_roll_chunks: int = 6,
     ):

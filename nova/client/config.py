@@ -29,7 +29,8 @@ class ClientConfig(BaseModel):
     # дефолты под толстый канал Джея (150+ Мбит аплинк): 1080p/12fps;
     # на тонком канале крутить вниз clip_max_w/clip_fps/clip_kbps
     cowatch: bool = True
-    clip_s: float = 15.0
+    # 15с давали 20-30с от момента до комментария; 8с режет ожидание вдвое
+    clip_s: float = 8.0
     clip_fps: int = 12
     clip_max_w: int = 1920
     clip_crf: int = 26

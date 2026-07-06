@@ -89,16 +89,24 @@ class Session:
         self._feedback_path = feedback_path
         self._frames: deque[bytes] = deque(maxlen=8)
         self._last_clip = ""
+        self._last_user_ts = 0.0
         # история текстовая (кадры в неё не пишутся), поэтому дешёвая:
         # 100 реплик ~ 4к токенов из 16к окна
         self._history: deque[dict] = deque(maxlen=100)
         self._last_text: str = ""
+
+    def _user_talking(self) -> bool:
+        """Тишина вежливости: после реплики Джея проактив молчит —
+        его диалог всегда главнее её наблюдений."""
+        quiet = float(os.environ.get("NOVA_QUIET_AFTER_USER_S", "20"))
+        return time.time() - self._last_user_ts < quiet
 
     async def handle(self, msg) -> None:
         if isinstance(msg, Frame):
             self._frames.append(base64.b64decode(msg.jpeg_b64))
             await self._chronicle_pulse()
         elif isinstance(msg, AudioSegment):
+            self._last_user_ts = time.time()
             try:
                 text = await self._asr.transcribe(base64.b64decode(msg.pcm_b64), msg.sample_rate)
                 if asr_garbage(text):
@@ -139,16 +147,20 @@ class Session:
             describe = getattr(self._llm, "describe_clip", None)
             if describe is None:
                 return
-            summary = await describe(base64.b64decode(msg.mp4_b64))
+            from nova.server.game_hints import pick_hint
+
+            hint = pick_hint(self._last_clip + " " + (
+                self._memory.store._last_seen if self._memory else ""))
+            summary = await describe(base64.b64decode(msg.mp4_b64), hint=hint)
             if not summary:
                 return
             self._last_clip = summary
             decision = self._engine.on_event("clip", now=time.time())
-            if decision.speak:
+            if decision.speak and not self._user_talking():
                 await self._comment(f"клип: {summary}", reason="proactive")
         elif isinstance(msg, DetectorEvent):
             decision = self._engine.on_event(msg.event, now=time.time())
-            if decision.speak:
+            if decision.speak and not self._user_talking():
                 await self._comment(msg.event, reason="proactive")
         elif isinstance(msg, Hotkey):
             await self._handle_hotkey(msg)

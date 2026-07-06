@@ -54,6 +54,7 @@ class LoopbackRecorder:
         self._pa = None
         self._frames: list[bytes] = []
         self._rate = 48000
+        self._channels = 2
 
     def start(self) -> None:
         if self._stream is not None:
@@ -69,10 +70,14 @@ class LoopbackRecorder:
             for i in range(self._pa.get_device_count()):
                 dev = self._pa.get_device_info_by_index(i)
                 if dev.get("isLoopbackDevice") and out["name"] in dev["name"]:
+                    # loopback открывается ТОЛЬКО с родными параметрами
+                    # устройства: моно даёт OSError -9996 Invalid device
                     self._rate = int(dev["defaultSampleRate"])
+                    self._channels = max(1, int(dev["maxInputChannels"]))
                     self._frames = []
                     self._stream = self._pa.open(
-                        format=pa.paInt16, channels=1, rate=self._rate,
+                        format=pa.paInt16, channels=self._channels,
+                        rate=self._rate,
                         input=True, input_device_index=i,
                         frames_per_buffer=4096,
                         stream_callback=self._cb)
@@ -104,7 +109,7 @@ class LoopbackRecorder:
             return None
         path = tempfile.mktemp(suffix=".wav")
         with wave.open(path, "wb") as w:
-            w.setnchannels(1)
+            w.setnchannels(self._channels)
             w.setsampwidth(2)
             w.setframerate(self._rate)
             w.writeframes(b"".join(self._frames))

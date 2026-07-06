@@ -386,3 +386,36 @@ def test_cinema_command_detection():
     assert cinema_command("хватит смотреть") is False
     assert cinema_command("смотри, какой анлак!") is None
     assert cinema_command("как дела?") is None
+
+
+def test_game_hint_picked_for_rivals():
+    from nova.server.game_hints import pick_hint
+
+    hint = pick_hint("турнир Marvel Rivals, Эмма Фрост на точке")
+    assert "ПАТРОНЫ" in hint and "ЗАБАНЕННЫЕ" in hint
+    assert pick_hint("читает доку по питону") == ""
+
+
+async def test_proactive_quiet_after_user_reply():
+    import time as _t
+
+    llm = RecordingLLM(comment="комментирую!")
+    sent = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    session = Session(
+        send=send,
+        engine=ProactiveEngine(cooldown_s=0.0, talkativeness=1.0,
+                               dedupe_window_s=0.0),
+        asr=FixedASR("привет"), llm=llm, tts=MockTTS(),
+    )
+    await session.handle(_audio_msg())          # Джей только что говорил
+    sent.clear()
+    await session.handle(DetectorEvent(ts=1.0, event="scene_change"))
+    # тишина вежливости: проактив молчит 20с после реплики
+    assert [m for m in sent if isinstance(m, SpeakStart)] == []
+    session._last_user_ts = _t.time() - 30      # «прошло» полминуты
+    await session.handle(DetectorEvent(ts=2.0, event="scene_change"))
+    assert [m for m in sent if isinstance(m, SpeakStart)]
