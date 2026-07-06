@@ -125,8 +125,9 @@ async def test_synthesize_sequential_cut_and_normalize():
 
     tts._gen_sync = fake_gen
     chunks = [c async for c in tts.synthesize("Привет. Как дела.")]
-    assert len(chunks) == 2
-    assert calls[0][1] == 42 and calls[1][1] == 42
+    assert len(chunks) == 1                    # одна реплика — один дубль
+    assert calls[0][1] == 42
+    assert calls[0][0].startswith("(slow)Привет.")
     first = np.frombuffer(chunks[0], dtype=np.int16)
     # срез: 1.0 - 0.12 = 0.88с -> 88 сэмплов долой из 300
     assert len(first) == 300 - 88
@@ -167,7 +168,8 @@ async def test_failed_sentence_skipped_not_fatal():
 
     tts = make_vox(tag="")
     tts._gen_sync = fake_gen
-    chunks = [c async for c in tts.synthesize("Первое. Второе.")]
+    # смена эмоции -> два дубля; упал только первый
+    chunks = [c async for c in tts.synthesize("Первое. [laughing] Второе.")]
     assert len(chunks) == 1
 
 
@@ -417,12 +419,13 @@ async def test_synthesize_skips_marker_only_sentence():
     assert calls == ["Всё, довольен?"]   # пустышка в модель не ушла
 
 
-# ---- дубли как в bench10: первое предложение соло, остальное цельно ----
+# ---- дубли как в bench10: вся реплика цельно, разрез — смена эмоции ----
 
-def test_group_takes_first_solo_rest_joined():
+def test_group_takes_whole_reply_is_one_take():
     from nova.server.models.vox_tts import group_takes
 
-    assert group_takes(["Раз.", "Два.", "Три."]) == ["Раз.", "Два. Три."]
+    # склеек между предложениями нет — паузы только авторские (модели)
+    assert group_takes(["Раз.", "Два.", "Три."]) == ["Раз. Два. Три."]
     assert group_takes(["Одно."]) == ["Одно."]
 
 
@@ -431,17 +434,17 @@ def test_group_takes_split_by_emotion():
 
     got = group_takes(
         ["Привет.", "[laughing] Ха!", "[chuckling] Смешно.", "Ладно."])
-    # эмоция дубля едина: joy-предложения вместе, обычное — отдельно
+    # режем ТОЛЬКО на смене эмоции: у дубля один референс
     assert got == ["Привет.", "[laughing] Ха! [chuckling] Смешно.", "Ладно."]
 
 
 def test_group_takes_respects_max_chars():
     from nova.server.models.vox_tts import group_takes
 
-    long1 = "А" * 200 + "."
-    long2 = "Б" * 200 + "."
+    long1 = "А" * 280 + "."
+    long2 = "Б" * 280 + "."
     got = group_takes(["Старт.", long1, long2], max_chars=300)
-    assert got == ["Старт.", long1, long2]
+    assert got == ["Старт. " + long1, long2]
 
 
 async def test_synthesize_uniform_gain_across_reply():
@@ -452,7 +455,8 @@ async def test_synthesize_uniform_gain_across_reply():
         return np.full(10, next(peaks), dtype=np.int16)
 
     tts._gen_sync = fake_gen
-    chunks = [c async for c in tts.synthesize("Тихое. Громкое.")]
+    # смена эмоции даёт два дубля — гейн у второго от первого
+    chunks = [c async for c in tts.synthesize("Тихое. [laughing] Громкое.")]
     first = np.frombuffer(chunks[0], dtype=np.int16)
     second = np.frombuffer(chunks[1], dtype=np.int16)
     assert int(np.abs(first).max()) == 23000          # гейн по первому куску

@@ -213,17 +213,13 @@ def merge_lone_markers(sentences: list[str]) -> list[str]:
 
 def group_takes(sentences: list[str], max_chars: int = 300) -> list[str]:
     """Дубли как в bench10 (идеальный emo_base — ОДНА генерация всего
-    текста): первое предложение — соло, чтобы голос стартовал быстро,
-    остальные клеятся в цельные дубли — модель ведёт интонацию через
-    предложение, склейки тон не рвут. Новый дубль — при смене эмоции
-    или когда дубль вырос сверх max_chars."""
+    текста): реплика целиком уходит в модель одним дублем, интонация
+    ведётся через предложения без склеек. Новый дубль — только при
+    смене эмоции (референс один на дубль) или сверх max_chars."""
     takes: list[str] = []
     cur, cur_emo = "", None
-    for k, s in enumerate(sentences):
+    for s in sentences:
         emo = emotion_for(s)
-        if k == 0:
-            takes.append(s)
-            continue
         if cur and emo == cur_emo and len(cur) + len(s) + 1 <= max_chars:
             cur = f"{cur} {s}"
         else:
