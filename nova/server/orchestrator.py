@@ -95,11 +95,15 @@ class Session:
         self._history: deque[dict] = deque(maxlen=100)
         self._last_text: str = ""
 
-    def _user_talking(self) -> bool:
-        """Тишина вежливости: после реплики Джея проактив молчит —
-        его диалог всегда главнее её наблюдений."""
-        quiet = float(os.environ.get("NOVA_QUIET_AFTER_USER_S", "20"))
-        return time.time() - self._last_user_ts < quiet
+    def _quiet_hint(self) -> str:
+        """Тишина вежливости (мягкая): в окно после реплики Джея события
+        не блокируются, а уходят мозгу с наказом «только если реально
+        стоит» — решение за ней (зачаток судьи 3Б)."""
+        quiet = float(os.environ.get("NOVA_QUIET_AFTER_USER_S", "30"))
+        if time.time() - self._last_user_ts < quiet:
+            return (" (Джей только что говорил — вклинивайся ТОЛЬКО если "
+                    f"событие реально того стоит, иначе ответь {NO_COMMENT})")
+        return ""
 
     async def handle(self, msg) -> None:
         if isinstance(msg, Frame):
@@ -156,12 +160,14 @@ class Session:
                 return
             self._last_clip = summary
             decision = self._engine.on_event("clip", now=time.time())
-            if decision.speak and not self._user_talking():
-                await self._comment(f"клип: {summary}", reason="proactive")
+            if decision.speak:
+                await self._comment(f"клип: {summary}{self._quiet_hint()}",
+                                    reason="proactive")
         elif isinstance(msg, DetectorEvent):
             decision = self._engine.on_event(msg.event, now=time.time())
-            if decision.speak and not self._user_talking():
-                await self._comment(msg.event, reason="proactive")
+            if decision.speak:
+                await self._comment(f"{msg.event}{self._quiet_hint()}",
+                                    reason="proactive")
         elif isinstance(msg, Hotkey):
             await self._handle_hotkey(msg)
 

@@ -396,7 +396,7 @@ def test_game_hint_picked_for_rivals():
     assert pick_hint("читает доку по питону") == ""
 
 
-async def test_proactive_quiet_after_user_reply():
+async def test_proactive_quiet_hint_after_user_reply():
     import time as _t
 
     llm = RecordingLLM(comment="комментирую!")
@@ -412,10 +412,10 @@ async def test_proactive_quiet_after_user_reply():
         asr=FixedASR("привет"), llm=llm, tts=MockTTS(),
     )
     await session.handle(_audio_msg())          # Джей только что говорил
-    sent.clear()
     await session.handle(DetectorEvent(ts=1.0, event="scene_change"))
-    # тишина вежливости: проактив молчит 20с после реплики
-    assert [m for m in sent if isinstance(m, SpeakStart)] == []
-    session._last_user_ts = _t.time() - 30      # «прошло» полминуты
+    # мягкая тишина: событие ушло мозгу С НАКАЗОМ «только если стоит»
+    comment_events = [c[1] for c in llm.calls if c[0] == "comment"]
+    assert any("реально того стоит" in e for e in comment_events)
+    session._last_user_ts = _t.time() - 60      # «прошла» минута
     await session.handle(DetectorEvent(ts=2.0, event="scene_change"))
-    assert [m for m in sent if isinstance(m, SpeakStart)]
+    assert "реально того стоит" not in llm.calls[-1][1]  # наказ снят
