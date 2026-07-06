@@ -89,9 +89,12 @@ class QwenVLM(VisionLLM):
 
     async def complete(self, system: str, user: str,
                        max_tokens: int = 1200) -> str:
-        """Служебный вызов без персоны и штрафов — для конденсера памяти."""
+        """Служебный вызов без персоны и штрафов — для конденсера памяти.
+        Таймаут свой, щедрый: первое сжатие дневника жуёт десятки КБ
+        (стандартных 60с не хватает — ReadTimeout)."""
         r = await self._client.post(
             "/chat/completions",
+            timeout=240.0,
             json={
                 "model": self._model,
                 "messages": [
