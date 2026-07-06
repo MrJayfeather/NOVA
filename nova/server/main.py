@@ -69,8 +69,8 @@ def build_models(mock: bool, persona_prompt: str):
             reference_id=os.environ.get(
                 "NOVA_FISH_REF_ID", "4075192824f64dc6aabbbf70124d6a01"),
             # затор free-очереди: лучше быстро пропустить предложение,
-            # чем молчать минуту
-            timeout=35.0,
+            # чем молчать полминуты (зависший запрос упрётся в этот потолок)
+            timeout=float(os.environ.get("NOVA_FISH_TIMEOUT", "15")),
             # ниже температура — стабильнее голос (меньше «выпадений из
             # роли»), живость добирается эмоциональными ремарками
             temperature=float(os.environ.get("NOVA_FISH_TEMP", "0.5")),

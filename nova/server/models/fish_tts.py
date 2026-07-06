@@ -100,9 +100,9 @@ class FishTTS(TTSModel):
         raise last  # type: ignore[misc]
 
     async def synthesize(self, text: str) -> AsyncIterator[bytes]:
-        # все предложения синтезируются ПАРАЛЛЕЛЬНО и отдаются одним
-        # потоком после готовности всех: чуть дольше до первого звука,
-        # зато без провалов посреди реплики при заторе облака
+        # предложения синтезируются ПАРАЛЛЕЛЬНО, но отдаются ПО ПОРЯДКУ по
+        # мере готовности: первое звучит сразу, не дожидаясь хвоста. Иначе
+        # одно зависание free-тарифа (бывает 30с) блокировало всю реплику.
         sentences = split_for_tts(text)[:20]
         # free-тариф fish.audio: не больше 5 одновременных запросов
         sem = asyncio.Semaphore(4)
@@ -112,12 +112,9 @@ class FishTTS(TTSModel):
                 return await self._tts_call(s)
 
         tasks = [asyncio.create_task(bounded(s)) for s in sentences]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for sentence, res in zip(sentences, results):
+        for sentence, task in zip(sentences, tasks):
             try:
-                if isinstance(res, BaseException):
-                    raise res
-                pcm, rate = wav_to_pcm(res)
+                pcm, rate = wav_to_pcm(await task)
                 if self._validator and not await self._validator(sentence, pcm, rate):
                     # заскок: перегенерация чуть другим маршрутом
                     print(f"[nova] fish-tts: сверка провалена, пересинтез: {sentence[:50]!r}")

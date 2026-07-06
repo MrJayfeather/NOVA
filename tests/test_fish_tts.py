@@ -78,3 +78,31 @@ def test_wav_to_pcm_downmixes_stereo():
     arr = np.frombuffer(pcm, dtype=np.int16)
     # ровный сигнал остаётся ровным, пик нормализован
     assert arr[0] == arr[-1] == 23000
+
+
+async def test_first_chunk_not_blocked_by_slow_tail():
+    # облако затупило на ВТОРОМ предложении — первое обязано прозвучать
+    # сразу, не дожидаясь хвоста (иначе одно зависание = вся реплика ждёт)
+    import asyncio
+    import time
+
+    from nova.server.models.fish_tts import FishTTS
+
+    tts = FishTTS.__new__(FishTTS)
+    tts._reference_id = "x"
+    tts._validator = None
+    tts._temperature = 0.5
+    tts.sample_rate = 44100
+
+    async def fake_call(sentence, attempts=2, temperature=None):
+        if "Второе" in sentence:
+            await asyncio.sleep(0.3)      # завис на хвосте
+        return make_wav(frames=b"\x10\x00" * 100)
+
+    tts._tts_call = fake_call
+    gen = tts.synthesize("Первое. Второе.")
+    t0 = time.perf_counter()
+    await gen.__anext__()                 # первый звук
+    assert time.perf_counter() - t0 < 0.2  # не ждал 0.3с второго
+    rest = [c async for c in gen]
+    assert len(rest) == 1                 # второе всё же прозвучало
