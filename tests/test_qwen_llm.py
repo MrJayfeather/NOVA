@@ -40,14 +40,16 @@ async def test_complete_plain_call():
             return {"choices": [{"message": {"content": "выжимка"}}]}
 
     class FakeClient:
-        async def post(self, url, json=None):
+        async def post(self, url, json=None, timeout=None):
             sent.update(json)
+            sent["_timeout"] = timeout
             return FakeResp()
 
     llm = QwenVLM.__new__(QwenVLM)
     llm._model = "m"
     llm._client = FakeClient()
     out = await llm.complete("ты конденсер", "сожми это")
+    assert sent["_timeout"] == 240.0      # первому сжатию нужен запас
     assert out == "выжимка"
     assert sent["messages"][0]["role"] == "system"
     assert sent["temperature"] == 0.3     # ровная выжимка, не креатив
