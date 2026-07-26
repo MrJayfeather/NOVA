@@ -14,7 +14,8 @@ IDLE_LIMIT_S = float(os.environ.get("NOVA_IDLE_LIMIT", "900"))
 # однажды вачдог усыпил инстанс посреди дообучения голоса
 BUSY_PATTERNS = ("fish_speech/train.py", "merge_lora", "extract_vq",
                  "build_dataset", "finetune_prep", "rvc_bench", "uv venv",
-                 "finetune_cli", "pip install", "vox_bench", "voxcpm2_bench")
+                 "finetune_cli", "pip install", "vox_bench", "voxcpm2_bench",
+                 "train_voxcpm")
 
 
 def should_stop(clients: int, idle_s: float, limit_s: float = IDLE_LIMIT_S) -> bool:
