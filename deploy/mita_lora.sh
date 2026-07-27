@@ -8,6 +8,15 @@ export HF_HOME=/workspace/hf
 unset HF_ENDPOINT
 cd /workspace
 VOXPY=/workspace/vox/bin/python
+# самолечение: пробуждение может утащить numpy венва в 1.x (DFN-блок
+# onstart тянет deepfilternet с numpy<2, а системный scipy собран под
+# numpy 2) — чиним ДО любой работы
+$VOXPY -c 'import scipy.signal' 2>/dev/null || \
+  /workspace/vox/bin/pip install -q 'numpy==2.2.*' -i https://pypi.org/simple
+# параметры прогона (переопределяются окружением):
+export LORA_ITERS=${LORA_ITERS:-400}
+export LORA_SAVE_INT=${LORA_SAVE_INT:-25}
+export LORA_CKPT_DIR=${LORA_CKPT_DIR:-/workspace/ckpts_mita_lora}
 
 # страховка от забытого бокса: через 3 часа без /workspace/keep_alive —
 # самостоп (после подмены runner вачдог не работает: он не запускается)
@@ -49,16 +58,16 @@ print("шаблон:", tpl, "ключи:", sorted(cfg))
 cfg["pretrained_path"] = os.environ["SNAP"]
 cfg["train_manifest"] = "/workspace/mita_lora/train.jsonl"
 cfg["val_manifest"] = "/workspace/mita_lora/val.jsonl"
-cfg["save_path"] = "/workspace/ckpts_mita_lora"
+cfg["save_path"] = os.environ["LORA_CKPT_DIR"]
 # 430 клипов × эфф. батч 16 ≈ 27 шагов/эпоха; TTS переобучается быстро —
 # частые чекпоинты, отбор по val-лоссу и ушам
 for k in ("num_iters", "max_iters", "total_iters", "max_steps"):
     if k in cfg:
-        cfg[k] = 400
+        cfg[k] = int(os.environ["LORA_ITERS"])
 for k in ("save_interval", "save_every", "ckpt_interval",
           "val_interval", "valid_interval", "eval_interval"):
     if k in cfg:
-        cfg[k] = 25
+        cfg[k] = int(os.environ["LORA_SAVE_INT"])
 lora = cfg.get("lora") or {}
 lora.update({"r": 32, "alpha": 32, "enable_lm": True, "enable_dit": True})
 cfg["lora"] = lora
